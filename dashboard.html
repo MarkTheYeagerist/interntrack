@@ -12,6 +12,15 @@
     <div class="panel">
       <h2>Dashboard</h2>
 
+      <!-- In-app reminder banner -->
+      <div id="reminderBanner" class="banner" style="display:none;">
+        <div>
+          <b>⚠️ Pending Time Out</b>
+          <div class="muted" id="reminderText" style="margin-top:4px;"></div>
+        </div>
+        <button id="reminderBtn" class="btn-secondary" style="width:auto;">Time Out Now</button>
+      </div>
+
       <!-- Profile Card -->
       <div class="card">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
@@ -45,6 +54,32 @@
         <div class="stat">
           <div class="stat-label">Week Hours</div>
           <div class="stat-value" id="weekHours">-</div>
+        </div>
+      </div>
+
+      <!-- Team Status Today -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">Today’s Team Status</h3>
+            <div class="muted" id="teamSubtitle" style="margin-top:6px;">Loading...</div>
+          </div>
+          <button id="btnRefreshTeam" class="btn-secondary" style="width:auto;">Refresh</button>
+        </div>
+
+        <div class="team-grid" style="margin-top:12px;">
+          <div>
+            <div class="team-title">Onsite (Timed in)</div>
+            <ul id="onsiteList" class="team-list"></ul>
+          </div>
+          <div>
+            <div class="team-title">WFH (Timed in)</div>
+            <ul id="wfhList" class="team-list"></ul>
+          </div>
+          <div>
+            <div class="team-title">Pending Time Out</div>
+            <ul id="pendingList" class="team-list"></ul>
+          </div>
         </div>
       </div>
 
@@ -96,6 +131,9 @@
         <p class="muted" style="margin-top:10px;">
           Note: System prevents duplicate Time In/Out for the same AM/PM slot.
         </p>
+        <p class="muted">
+          Rule: Time In allowed <b>8:00 AM onwards</b>.
+        </p>
       </div>
     </div>
 
@@ -135,6 +173,18 @@
 
     const btnStartAuto = document.getElementById("btnStartAuto");
     const btnStopAuto = document.getElementById("btnStopAuto");
+
+    // Team status elements
+    const teamSubtitle = document.getElementById("teamSubtitle");
+    const onsiteList = document.getElementById("onsiteList");
+    const wfhList = document.getElementById("wfhList");
+    const pendingList = document.getElementById("pendingList");
+    const btnRefreshTeam = document.getElementById("btnRefreshTeam");
+
+    // Reminder banner
+    const reminderBanner = document.getElementById("reminderBanner");
+    const reminderText = document.getElementById("reminderText");
+    const reminderBtn = document.getElementById("reminderBtn");
 
     let cameraStream = null;
     let modelsLoaded = false;
@@ -178,6 +228,18 @@
       if (type === "Time In") return am ? "amIn" : "pmIn";
       if (type === "Time Out") return am ? "amOut" : "pmOut";
       return null;
+    }
+
+    function isAfter8AM(now = new Date()) {
+      const cutoff = new Date(now);
+      cutoff.setHours(8, 0, 0, 0);
+      return now >= cutoff;
+    }
+
+    function isAfter530PM(now = new Date()) {
+      const cutoff = new Date(now);
+      cutoff.setHours(17, 30, 0, 0);
+      return now >= cutoff;
     }
 
     async function updateWorkTypeLock(uid) {
@@ -265,10 +327,6 @@
         statusEl.textContent = "No face detected. Center your face + add light.";
         return false;
       }
-      if (!Array.isArray(current) || current.length !== 128) {
-        statusEl.textContent = `Invalid live face descriptor length: ${current?.length}`;
-        return false;
-      }
 
       const dist = euclideanDistance(saved, current);
       statusEl.textContent = `Face detected. Match distance: ${dist.toFixed(3)}`;
@@ -278,26 +336,19 @@
     }
 
     async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: false
-        });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false
+      });
 
-        cameraStream = stream;
-        video.srcObject = stream;
-        video.style.display = "block";
+      cameraStream = stream;
+      video.srcObject = stream;
+      video.style.display = "block";
 
-        await new Promise((resolve) => {
-          if (video.videoWidth) return resolve();
-          video.onloadedmetadata = () => resolve();
-        });
-
-      } catch (err) {
-        alert("Camera access failed. Allow camera permission.\n\n" + err.message);
-        statusEl.textContent = "Camera error: " + err.message;
-        throw err;
-      }
+      await new Promise((resolve) => {
+        if (video.videoWidth) return resolve();
+        video.onloadedmetadata = () => resolve();
+      });
     }
 
     function stopCamera() {
@@ -309,17 +360,36 @@
       video.style.display = "none";
     }
 
+    // ✅ Timestamp on photo (lower-right) + resize (saves Firestore space too)
     function captureImageBase64() {
       const w = video.videoWidth;
       const h = video.videoHeight;
       if (!w || !h) throw new Error("Camera not ready yet. Wait 1–2 seconds.");
 
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0, w, h);
+      const targetW = 640;
+      const scale = targetW / w;
+      const targetH = Math.round(h * scale);
 
-      return canvas.toDataURL("image/jpeg", 0.6);
+      canvas.width = targetW;
+      canvas.height = targetH;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, targetW, targetH);
+
+      const ts = new Date().toLocaleString();
+      ctx.font = "16px Arial";
+      ctx.textBaseline = "bottom";
+
+      const padding = 10;
+      const textW = ctx.measureText(ts).width;
+
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(targetW - textW - padding*2, targetH - 26 - padding, textW + padding*2, 26 + padding);
+
+      ctx.fillStyle = "white";
+      ctx.fillText(ts, targetW - textW - padding, targetH - padding);
+
+      return canvas.toDataURL("image/jpeg", 0.7);
     }
 
     async function loadUserProfile(uid) {
@@ -327,7 +397,6 @@
       if (!snap.exists()) throw new Error("User profile not found in Firestore.");
 
       const data = snap.data();
-
       hasFace = Array.isArray(data.faceDescriptor) && data.faceDescriptor.length === 128;
 
       uName.textContent = data.name ?? "-";
@@ -447,9 +516,8 @@
         const a = docu.data();
         if (!a.timestamp) return;
 
-        if (a.type === "Time In") {
-          lastIn = a.timestamp.toDate();
-        } else if (a.type === "Time Out" && lastIn) {
+        if (a.type === "Time In") lastIn = a.timestamp.toDate();
+        else if (a.type === "Time Out" && lastIn) {
           const out = a.timestamp.toDate();
           const diff = out - lastIn;
           if (diff > 0) totalMs += diff;
@@ -485,19 +553,50 @@
       );
 
       const snap = await getDocs(q);
-
       const slots = { amIn: false, pmIn: false, amOut: false, pmOut: false };
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
         const dt = a.timestamp.toDate();
         const key = slotKey(a.type, dt);
         if (key) slots[key] = true;
       });
 
       return slots;
+    }
+
+    // For user banner reminder
+    async function getUserTodayState(uid) {
+      const q = query(
+        collection(db, "attendance"),
+        where("userId", "==", uid),
+        where("timestamp", ">=", startOfToday()),
+        where("timestamp", "<", startOfTomorrow()),
+        orderBy("timestamp", "asc")
+      );
+      const snap = await getDocs(q);
+
+      let lastType = null;
+      let lastInTime = null;
+      let workType = "-";
+
+      snap.forEach(docu => {
+        const a = docu.data();
+        if (!a.timestamp) return;
+        const dt = a.timestamp.toDate();
+        lastType = a.type || lastType;
+        if (a.type === "Time In") {
+          lastInTime = dt;
+          workType = a.workType || workType;
+        }
+        if (a.type === "Time Out") {
+          // completed
+        }
+      });
+
+      const active = lastType === "Time In";
+      return { active, lastInTime, workType };
     }
 
     async function loadTodaySummary(uid) {
@@ -586,9 +685,8 @@
         const a = docu.data();
         if (!a.timestamp) return;
 
-        if (a.type === "Time In") {
-          lastIn = a.timestamp.toDate();
-        } else if (a.type === "Time Out" && lastIn) {
+        if (a.type === "Time In") lastIn = a.timestamp.toDate();
+        else if (a.type === "Time Out" && lastIn) {
           const out = a.timestamp.toDate();
           const diff = out - lastIn;
           if (diff > 0) totalMs += diff;
@@ -599,14 +697,113 @@
       weekHoursEl.textContent = `${formatHours(totalMs)} hrs`;
     }
 
+    // ✅ Onsite/WFH + Pending list for today
+    async function loadTodayTeamStatus() {
+      onsiteList.innerHTML = "";
+      wfhList.innerHTML = "";
+      pendingList.innerHTML = "";
+
+      // map uid -> {name, dept}
+      const usersSnap = await getDocs(collection(db, "users"));
+      const userMap = new Map();
+      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+
+      // today's attendance for everyone
+      const attSnap = await getDocs(query(
+        collection(db, "attendance"),
+        where("timestamp", ">=", startOfToday()),
+        where("timestamp", "<", startOfTomorrow()),
+        orderBy("timestamp", "asc")
+      ));
+
+      // state per uid
+      const state = new Map(); // uid -> {active, workType, lastInTime}
+      attSnap.forEach(docu => {
+        const a = docu.data();
+        if (!a.userId || !a.timestamp) return;
+        const dt = a.timestamp.toDate();
+
+        if (!state.has(a.userId)) state.set(a.userId, { active: false, workType: "-", lastInTime: null });
+
+        const s = state.get(a.userId);
+
+        if (a.type === "Time In") {
+          s.active = true;
+          s.workType = a.workType || s.workType;
+          s.lastInTime = dt;
+        } else if (a.type === "Time Out") {
+          s.active = false;
+        }
+      });
+
+      const onsite = [];
+      const wfh = [];
+      const pending = [];
+
+      // Only show users who are active (timed in)
+      for (const [uid, s] of state.entries()) {
+        if (!s.active) continue;
+        const u = userMap.get(uid) || {};
+        const label = `${u.name ?? uid} (${s.workType}) — In: ${s.lastInTime ? formatTime(s.lastInTime) : "-"}`;
+
+        if ((s.workType || "").toLowerCase() === "wfh") wfh.push(label);
+        else onsite.push(label);
+
+        pending.push(label);
+      }
+
+      const setList = (ul, arr) => {
+        if (arr.length === 0) {
+          const li = document.createElement("li");
+          li.className = "team-empty";
+          li.textContent = "None";
+          ul.appendChild(li);
+          return;
+        }
+        arr.forEach(t => {
+          const li = document.createElement("li");
+          li.textContent = t;
+          ul.appendChild(li);
+        });
+      };
+
+      setList(onsiteList, onsite);
+      setList(wfhList, wfh);
+      setList(pendingList, pending);
+
+      teamSubtitle.textContent = `Active: ${pending.length} | Total users: ${usersSnap.size}`;
+    }
+
+    // ✅ In-app reminder banner (if user still timed in after 5:30 PM)
+    async function updateReminderBanner() {
+      if (!currentUid) return;
+
+      const s = await getUserTodayState(currentUid);
+
+      if (s.active && isAfter530PM(new Date())) {
+        reminderText.textContent = `You are still timed in (${s.workType}). Please time out to avoid incomplete logs.`;
+        reminderBanner.style.display = "flex";
+      } else {
+        reminderBanner.style.display = "none";
+      }
+    }
+
+    reminderBtn.addEventListener("click", () => {
+      window.timeOut();
+    });
+
+    btnRefreshTeam.addEventListener("click", loadTodayTeamStatus);
+
     async function refreshAll() {
       if (!currentUid) return;
       await computeRenderedHours(currentUid);
       await loadMonthlyDTR(currentUid);
       await updateWorkTypeLock(currentUid);
-
       await loadTodaySummary(currentUid);
       await loadWeekHours(currentUid);
+
+      await loadTodayTeamStatus();
+      await updateReminderBanner();
     }
 
     function stopAutoTimeInLoop() {
@@ -622,6 +819,13 @@
 
     async function startAutoTimeInLoop() {
       if (!currentUid) return;
+
+      // ✅ 8:00 AM onwards rule
+      if (!isAfter8AM(new Date())) {
+        alert("Time In is allowed starting 8:00 AM onwards.");
+        statusEl.textContent = "Blocked: Too early to Time In.";
+        return;
+      }
 
       btnStartAuto.disabled = true;
       btnStopAuto.disabled = false;
@@ -754,7 +958,7 @@
         });
 
         alert(type + " recorded!");
-        statusEl.textContent = type + " saved. Updating table...";
+        statusEl.textContent = type + " saved. Updating...";
         await refreshAll();
         statusEl.textContent = "Updated.";
 
@@ -793,6 +997,11 @@
       await refreshAll();
 
       statusEl.textContent = "Ready. Click 'Start Auto Time In' to open camera.";
+
+      // refresh reminder every minute (lightweight)
+      setInterval(() => {
+        updateReminderBanner();
+      }, 60000);
     });
 
     window.addEventListener("beforeunload", () => {

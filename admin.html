@@ -12,6 +12,40 @@
       <h2>Admin Panel</h2>
       <p class="muted" id="adminStatus">Checking admin access...</p>
 
+      <!-- Pending Time-outs -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">Pending Time-Out (Today)</h3>
+            <div class="muted" id="pendingSubtitle" style="margin-top:6px;">Loading...</div>
+          </div>
+          <button id="btnRefreshPending" class="btn-secondary" style="width:auto;">Refresh</button>
+        </div>
+
+        <ul id="pendingAdminList" class="team-list" style="margin-top:10px;"></ul>
+      </div>
+
+      <!-- Weekly Export + Remove Images -->
+      <div class="card">
+        <h3 style="margin:0;">Weekly Export (ZIP)</h3>
+        <div class="muted" style="margin-top:6px;">
+          Exports: XLSX + /images folder (full images). Then you can remove images to save Firestore storage.
+        </div>
+
+        <div class="export-row">
+          <div>
+            <label class="muted"><b>Pick any date in the week</b></label>
+            <input type="date" id="weekDate" />
+          </div>
+
+          <button id="btnExportZip" class="btn-secondary" style="width:auto;">Download ZIP</button>
+          <button id="btnRemoveImages" class="btn-secondary" style="width:auto;" disabled>Remove Images (This Week)</button>
+        </div>
+
+        <p class="muted" id="exportStatus" style="margin-top:8px;"></p>
+      </div>
+
+      <!-- Interns table -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <h3 style="margin:0;">All Interns</h3>
@@ -36,6 +70,7 @@
         </div>
       </div>
 
+      <!-- Attendance logs -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <h3 style="margin:0;">Attendance Logs</h3>
@@ -69,6 +104,7 @@
     </div>
   </div>
 
+  <!-- Photo Modal -->
   <div id="photoModal" style="
     display:none;
     position:fixed;
@@ -98,13 +134,18 @@
     </div>
   </div>
 
+  <!-- ZIP + XLSX libraries (no card needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
   <script type="module">
     import { auth, db } from "./js/firebase.js";
     import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import {
       doc, getDoc,
       collection, getDocs,
-      query, where, orderBy, limit
+      query, where, orderBy, limit,
+      updateDoc, deleteField, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const adminStatus = document.getElementById("adminStatus");
@@ -115,11 +156,22 @@
     const logFilter = document.getElementById("logFilter");
     const internCount = document.getElementById("internCount");
 
+    const pendingAdminList = document.getElementById("pendingAdminList");
+    const pendingSubtitle = document.getElementById("pendingSubtitle");
+    const btnRefreshPending = document.getElementById("btnRefreshPending");
+
+    const weekDate = document.getElementById("weekDate");
+    const btnExportZip = document.getElementById("btnExportZip");
+    const btnRemoveImages = document.getElementById("btnRemoveImages");
+    const exportStatus = document.getElementById("exportStatus");
+
     const photoModal = document.getElementById("photoModal");
     const photoImg = document.getElementById("photoImg");
     const closePhotoBtn = document.getElementById("closePhotoBtn");
     const photoTitle = document.getElementById("photoTitle");
     const photoSubtitle = document.getElementById("photoSubtitle");
+
+    let lastWeekDocRefs = []; // docs with images for selected week
 
     function openPhotoModal({ name, type, dt, img }) {
       photoTitle.textContent = `${name || "Unknown"} — ${type || "Attendance"}`;
@@ -127,12 +179,10 @@
       photoImg.src = img;
       photoModal.style.display = "block";
     }
-
     function closePhotoModal() {
       photoModal.style.display = "none";
       photoImg.src = "";
     }
-
     closePhotoBtn.addEventListener("click", closePhotoModal);
     photoModal.addEventListener("click", (e) => {
       if (e.target === photoModal) closePhotoModal();
@@ -143,6 +193,70 @@
     }
     function fmtTime(d) {
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function startOfToday() {
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      return d;
+    }
+    function startOfTomorrow() {
+      const d = new Date();
+      d.setHours(0,0,0,0);
+      d.setDate(d.getDate() + 1);
+      return d;
+    }
+
+    function mondayOfWeek(dateObj) {
+      const d = new Date(dateObj);
+      const day = d.getDay(); // 0=Sun
+      const diffToMon = (day === 0 ? -6 : 1) - day;
+      d.setDate(d.getDate() + diffToMon);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+
+    function getWorkWeekRangeFromDateInput(dateStr) {
+      if (!dateStr) return null;
+
+      const picked = new Date(dateStr + "T00:00:00");
+      const mon = mondayOfWeek(picked);
+
+      const sat = new Date(mon);
+      sat.setDate(mon.getDate() + 5); // Saturday start
+      sat.setHours(0, 0, 0, 0);
+
+      const fri = new Date(mon);
+      fri.setDate(mon.getDate() + 4); // Friday
+      fri.setHours(0, 0, 0, 0);
+
+      return { mon, fri, sat };
+    }
+
+    function ymd(d) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function dataUrlToUint8Array(dataUrl) {
+      const base64 = dataUrl.split(",")[1] || "";
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     }
 
     async function computeRendered(uid) {
@@ -159,9 +273,8 @@
         const a = docu.data();
         if (!a.timestamp) return;
 
-        if (a.type === "Time In") {
-          lastIn = a.timestamp.toDate();
-        } else if (a.type === "Time Out" && lastIn) {
+        if (a.type === "Time In") lastIn = a.timestamp.toDate();
+        else if (a.type === "Time Out" && lastIn) {
           total += (a.timestamp.toDate() - lastIn);
           lastIn = null;
         }
@@ -174,7 +287,7 @@
       internBody.innerHTML = "";
 
       const usersSnap = await getDocs(collection(db, "users"));
-      internCount.textContent = `Total Interns: ${usersSnap.size}`;
+      internCount.textContent = `Total Users: ${usersSnap.size}`;
 
       if (usersSnap.empty) {
         internBody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No users found.</td></tr>`;
@@ -265,6 +378,219 @@
       });
     }
 
+    // ✅ Pending time-out today
+    async function loadPendingToday() {
+      pendingAdminList.innerHTML = "";
+
+      const usersSnap = await getDocs(collection(db, "users"));
+      const userMap = new Map();
+      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+
+      const attSnap = await getDocs(query(
+        collection(db, "attendance"),
+        where("timestamp", ">=", startOfToday()),
+        where("timestamp", "<", startOfTomorrow()),
+        orderBy("timestamp", "asc")
+      ));
+
+      const state = new Map(); // uid -> {active, workType, lastInTime}
+      attSnap.forEach(docu => {
+        const a = docu.data();
+        if (!a.userId || !a.timestamp) return;
+        const dt = a.timestamp.toDate();
+
+        if (!state.has(a.userId)) state.set(a.userId, { active:false, workType:"-", lastInTime:null });
+
+        const s = state.get(a.userId);
+        if (a.type === "Time In") {
+          s.active = true;
+          s.workType = a.workType || s.workType;
+          s.lastInTime = dt;
+        } else if (a.type === "Time Out") {
+          s.active = false;
+        }
+      });
+
+      const pending = [];
+      for (const [uid, s] of state.entries()) {
+        if (!s.active) continue;
+        const u = userMap.get(uid) || {};
+        pending.push(`${u.name ?? uid} (${s.workType}) — In: ${s.lastInTime ? fmtTime(s.lastInTime) : "-"}`);
+      }
+
+      if (pending.length === 0) {
+        const li = document.createElement("li");
+        li.className = "team-empty";
+        li.textContent = "None";
+        pendingAdminList.appendChild(li);
+      } else {
+        pending.forEach(t => {
+          const li = document.createElement("li");
+          li.textContent = t;
+          pendingAdminList.appendChild(li);
+        });
+      }
+
+      pendingSubtitle.textContent = `Pending: ${pending.length} | Total users: ${usersSnap.size}`;
+    }
+
+    // ✅ Weekly export ZIP: XLSX + images
+    async function exportWeekZip() {
+      exportStatus.textContent = "";
+      btnRemoveImages.disabled = true;
+      lastWeekDocRefs = [];
+
+      const range = getWorkWeekRangeFromDateInput(weekDate.value);
+      if (!range) {
+        alert("Please pick a date.");
+        return;
+      }
+
+      const { mon, fri, sat } = range;
+
+      exportStatus.textContent = `Exporting week: ${ymd(mon)} to ${ymd(fri)} (Mon-Fri)...`;
+
+      const usersSnap = await getDocs(collection(db, "users"));
+      const userMap = new Map();
+      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+
+      const attSnap = await getDocs(query(
+        collection(db, "attendance"),
+        where("timestamp", ">=", mon),
+        where("timestamp", "<", sat),
+        orderBy("timestamp", "asc")
+      ));
+
+      if (attSnap.empty) {
+        exportStatus.textContent = "No attendance records found for this week.";
+        return;
+      }
+
+      exportStatus.textContent = `Preparing ZIP... Records: ${attSnap.size}`;
+
+      const rows = [];
+      const zip = new window.JSZip();
+      const imgFolder = zip.folder("images");
+
+      let imgCount = 0;
+
+      attSnap.forEach(docu => {
+        const a = docu.data();
+        const dt = a.timestamp?.toDate?.() || null;
+        const u = userMap.get(a.userId) || {};
+
+        const row = {
+          docId: docu.id,
+          name: u.name ?? "",
+          department: u.department ?? "",
+          userId: a.userId ?? "",
+          date: dt ? fmtDate(dt) : "",
+          time: dt ? fmtTime(dt) : "",
+          type: a.type ?? "",
+          workType: a.workType ?? "",
+          imageFile: ""
+        };
+
+        if (a.imageBase64 && dt) {
+          const yyyy = dt.getFullYear();
+          const mm = String(dt.getMonth()+1).padStart(2,"0");
+          const dd = String(dt.getDate()).padStart(2,"0");
+          const hh = String(dt.getHours()).padStart(2,"0");
+          const mi = String(dt.getMinutes()).padStart(2,"0");
+
+          const safeType = (a.type || "log").replace(/\s+/g,"");
+          const filename = `${yyyy}-${mm}-${dd}__${hh}${mi}__${a.userId}__${safeType}.jpg`;
+
+          const bytes = dataUrlToUint8Array(a.imageBase64);
+          imgFolder.file(filename, bytes);
+
+          row.imageFile = `images/${filename}`;
+          imgCount++;
+
+          // keep refs so we can delete images after export
+          lastWeekDocRefs.push(docu.ref);
+        }
+
+        rows.push(row);
+      });
+
+      // XLSX
+      const ws = window.XLSX.utils.json_to_sheet(rows);
+      const wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, "Week");
+
+      const xlsxArray = window.XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      const weekLabel = `${ymd(mon)}_to_${ymd(fri)}`;
+      zip.file(`InternTrack_Week_${weekLabel}.xlsx`, xlsxArray);
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(blob, `InternTrack_Week_${weekLabel}.zip`);
+
+      exportStatus.textContent = `Downloaded ZIP ✅ (Rows: ${rows.length}, Images: ${imgCount})`;
+
+      // Enable remove images button if we have images
+      btnRemoveImages.disabled = lastWeekDocRefs.length === 0;
+    }
+
+    // ✅ Remove images: delete imageBase64 field only (keep logs)
+      async function removeWeekImages() {
+        const range = getWorkWeekRangeFromDateInput(weekDate.value);
+        if (!range) {
+          alert("Pick a date first.");
+          return;
+        }
+
+        const { mon, fri, sat } = range;
+
+        const ok = confirm(
+          `Remove images for: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)?\n\nThis keeps logs and only removes imageBase64.`
+        );
+        if (!ok) return;
+
+        exportStatus.textContent = "Finding docs with images for this week...";
+
+        try {
+          // Find ALL attendance docs in week that still have images
+          const snap = await getDocs(query(
+            collection(db, "attendance"),
+            where("timestamp", ">=", mon),
+            where("timestamp", "<", sat),
+            orderBy("timestamp", "asc")
+          ));
+
+          const refs = [];
+          snap.forEach(d => {
+            const a = d.data();
+            if (a.imageBase64) refs.push(d.ref);
+          });
+
+          if (refs.length === 0) {
+            exportStatus.textContent = "No images found to remove for this week.";
+            await loadLogs();
+            return;
+          }
+
+          exportStatus.textContent = `Removing images... Docs: ${refs.length}`;
+
+          // Batch deleteField in chunks
+          let idx = 0;
+          while (idx < refs.length) {
+            const batch = writeBatch(db);
+            const chunk = refs.slice(idx, idx + 450);
+            chunk.forEach(ref => batch.update(ref, { imageBase64: deleteField() }));
+            await batch.commit();
+            idx += chunk.length;
+          }
+
+          exportStatus.textContent = `Images removed ✅ (${refs.length} docs updated). Refreshing...`;
+          await loadLogs();
+        } catch (err) {
+          console.error(err);
+          exportStatus.textContent = "❌ Failed to remove images: " + (err?.message || err);
+          alert("Remove failed. Check Console (F12) for the error.");
+        }
+      }
+
     searchIntern.addEventListener("input", () => {
       const filter = searchIntern.value.toLowerCase();
       Array.from(internBody.children).forEach(row => {
@@ -273,6 +599,10 @@
     });
 
     logFilter.addEventListener("change", loadLogs);
+    btnRefreshPending.addEventListener("click", loadPendingToday);
+
+    btnExportZip.addEventListener("click", exportWeekZip);
+    btnRemoveImages.addEventListener("click", removeWeekImages);
 
     window.goDashboard = () => window.location.href = "dashboard.html";
 
@@ -295,8 +625,16 @@
       }
 
       adminStatus.textContent = "Admin access granted.";
+      await loadPendingToday();
       await loadInterns();
       await loadLogs();
+
+      // default week date = today
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth()+1).padStart(2,"0");
+      const dd = String(today.getDate()).padStart(2,"0");
+      weekDate.value = `${yyyy}-${mm}-${dd}`;
     });
   </script>
 
