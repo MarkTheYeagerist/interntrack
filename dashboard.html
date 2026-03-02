@@ -132,7 +132,7 @@
           Note: System prevents duplicate Time In/Out for the same AM/PM slot.
         </p>
         <p class="muted">
-          Rule: Time In allowed <b>8:00 AM onwards</b>.
+          Rule: Time In allowed <b>8:00 AM onwards</b>. Hours credit starts at <b>9:00 AM</b>.
         </p>
       </div>
     </div>
@@ -240,6 +240,13 @@
       const cutoff = new Date(now);
       cutoff.setHours(17, 30, 0, 0);
       return now >= cutoff;
+    }
+
+    // ✅ CREDIT START TIME RULE: hours start counting at 9:00 AM
+    function creditedStartTime(dt) {
+      const nine = new Date(dt);
+      nine.setHours(9, 0, 0, 0);
+      return dt < nine ? nine : dt;
     }
 
     async function updateWorkTypeLock(uid) {
@@ -500,6 +507,7 @@
       });
     }
 
+    // ✅ TOTAL HOURS uses credited start time
     async function computeRenderedHours(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -516,8 +524,13 @@
         const a = docu.data();
         if (!a.timestamp) return;
 
-        if (a.type === "Time In") lastIn = a.timestamp.toDate();
-        else if (a.type === "Time Out" && lastIn) {
+        if (a.type === "Time In") {
+          const inDt = a.timestamp.toDate();
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(inDt);
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
           const out = a.timestamp.toDate();
           const diff = out - lastIn;
           if (diff > 0) totalMs += diff;
@@ -590,15 +603,13 @@
           lastInTime = dt;
           workType = a.workType || workType;
         }
-        if (a.type === "Time Out") {
-          // completed
-        }
       });
 
       const active = lastType === "Time In";
       return { active, lastInTime, workType };
     }
 
+    // ✅ TODAY summary uses credited start time too
     async function loadTodaySummary(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -611,6 +622,7 @@
       const snap = await getDocs(q);
 
       let timeIn = null;
+      let creditedIn = null;
       let timeOut = null;
       let workType = "-";
 
@@ -621,6 +633,7 @@
 
         if (a.type === "Time In" && !timeIn) {
           timeIn = dt;
+          creditedIn = (typeof a.creditedStartMs === "number") ? new Date(a.creditedStartMs) : creditedStartTime(dt);
           if (a.workType) workType = a.workType;
         }
         if (a.type === "Time Out") {
@@ -643,9 +656,9 @@
         return;
       }
 
-      const diff = timeOut - timeIn;
+      const diff = timeOut - (creditedIn || timeIn);
       todayStatusEl.textContent = "Completed";
-      todayHoursEl.textContent = `${formatHours(diff)} hrs`;
+      todayHoursEl.textContent = `${formatHours(Math.max(0, diff))} hrs`;
       todayWorkTypeEl.textContent = workType;
     }
 
@@ -665,6 +678,7 @@
       return { mon, nextMon };
     }
 
+    // ✅ WEEK HOURS uses credited start time
     async function loadWeekHours(uid) {
       const { mon, nextMon } = getWeekRangeMonSun();
 
@@ -685,8 +699,13 @@
         const a = docu.data();
         if (!a.timestamp) return;
 
-        if (a.type === "Time In") lastIn = a.timestamp.toDate();
-        else if (a.type === "Time Out" && lastIn) {
+        if (a.type === "Time In") {
+          const inDt = a.timestamp.toDate();
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(inDt);
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
           const out = a.timestamp.toDate();
           const diff = out - lastIn;
           if (diff > 0) totalMs += diff;
@@ -703,12 +722,10 @@
       wfhList.innerHTML = "";
       pendingList.innerHTML = "";
 
-      // map uid -> {name, dept}
       const usersSnap = await getDocs(collection(db, "users"));
       const userMap = new Map();
       usersSnap.forEach(d => userMap.set(d.id, d.data()));
 
-      // today's attendance for everyone
       const attSnap = await getDocs(query(
         collection(db, "attendance"),
         where("timestamp", ">=", startOfToday()),
@@ -716,8 +733,7 @@
         orderBy("timestamp", "asc")
       ));
 
-      // state per uid
-      const state = new Map(); // uid -> {active, workType, lastInTime}
+      const state = new Map();
       attSnap.forEach(docu => {
         const a = docu.data();
         if (!a.userId || !a.timestamp) return;
@@ -740,7 +756,6 @@
       const wfh = [];
       const pending = [];
 
-      // Only show users who are active (timed in)
       for (const [uid, s] of state.entries()) {
         if (!s.active) continue;
         const u = userMap.get(uid) || {};
@@ -864,12 +879,18 @@
             return;
           }
 
+          const now = new Date();
+          const credited = creditedStartTime(now);
+
           await addDoc(collection(db, "attendance"), {
             userId: currentUid,
             type: "Time In",
             workType: workTypeVal,
             imageBase64: captureImageBase64(),
-            timestamp: serverTimestamp()
+            timestamp: serverTimestamp(),
+
+            // ✅ store credited start for correct computation
+            creditedStartMs: credited.getTime()
           });
 
           alert("Time In recorded!");
@@ -922,6 +943,13 @@
         return;
       }
 
+      // ✅ block manual Time In before 8AM too (safety)
+      if (type === "Time In" && !isAfter8AM(now)) {
+        alert("Time In is allowed starting 8:00 AM onwards.");
+        statusEl.textContent = "Blocked: Too early to Time In.";
+        return;
+      }
+
       statusEl.textContent = "Recording " + type + "...";
 
       const slots = await getTodaySlots(currentUid);
@@ -949,13 +977,21 @@
       }
 
       try {
-        await addDoc(collection(db, "attendance"), {
+        const payload = {
           userId: currentUid,
           type,
           workType,
           imageBase64,
           timestamp: serverTimestamp()
-        });
+        };
+
+        // ✅ only Time In stores creditedStartMs
+        if (type === "Time In") {
+          const credited = creditedStartTime(now);
+          payload.creditedStartMs = credited.getTime();
+        }
+
+        await addDoc(collection(db, "attendance"), payload);
 
         alert(type + " recorded!");
         statusEl.textContent = type + " saved. Updating...";
