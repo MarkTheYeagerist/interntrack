@@ -34,82 +34,6 @@ body::before{
   background: linear-gradient(90deg, var(--brand), #ff4d4f);
 }
 
-/* keep your login/register container usable */
-.container{
-  margin-top: 80px;
-  background: var(--panel);
-  padding: 20px;
-  width: 340px;
-  margin-left: auto;
-  margin-right: auto;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-soft);
-  text-align: center;
-}
-
-.subtitle{
-  font-size: 14px;
-  color: var(--muted);
-  margin-bottom: 15px;
-}
-
-.show-password-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-top:8px;
-  margin-bottom:10px;
-  justify-content:flex-start;
-}
-
-.show-password-row input[type="checkbox"]{
-  width:16px;
-  height:16px;
-  cursor:pointer;
-}
-
-.show-password-row label{
-  font-size:14px;
-  cursor:pointer;
-}
-
-/* ===== Dashboard layout ===== */
-
-.app{
-  display:grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  padding: 18px;
-  max-width: 1120px;
-  margin: 0 auto;
-}
-
-.panel{
-  background: var(--panel);
-  border-radius: var(--radius);
-  padding: 18px;
-  box-shadow: var(--shadow-soft);
-  border: 1px solid var(--line);
-}
-
-/* style your existing h2 “Dashboard / Attendance” without changing HTML */
-.panel > h2{
-  margin: 0 0 12px;
-  font-size: 18px;
-  letter-spacing: .2px;
-}
-
-.card{
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  margin: 12px 0;
-  text-align:left;
-  box-shadow: 0 8px 14px rgba(17,24,39,.04);
-}
-
 .muted{
   color: var(--muted);
   font-size: 0.92rem;
@@ -161,7 +85,7 @@ button:disabled{
   box-shadow: none;
 }
 
-/* your secondary buttons */
+/* secondary buttons */
 .btn-secondary{
   background: #fff !important;
   color: var(--brand) !important;
@@ -174,7 +98,7 @@ button:disabled{
   border-color: rgba(225, 29, 46, .55) !important;
 }
 
-/* role badge you already use */
+/* role badge */
 .badge-role{
   padding: 4px 10px;
   border-radius: 999px;
@@ -187,30 +111,66 @@ button:disabled{
 .badge-role.employee{ background:#16a34a; }
 .badge-role.intern{ background: var(--brand); }
 
-/* summary cards grid */
-.cards-4{
+/* =================================
+   DASHBOARD LAYOUT
+   ================================= */
+
+.app{
   display:grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 16px;
+  padding: 18px;
+  margin: 0 auto;
+  width: min(1400px, 100%);
+}
+
+/* desktop column ratio (less empty space) */
+@media (min-width: 901px){
+  .app{
+    grid-template-columns: 1.35fr 0.85fr;
+    gap: 18px;
+  }
+}
+
+/* phones/tablets */
+@media (max-width: 900px){
+  .app{
+    grid-template-columns: 1fr;
+    padding: 10px;
+    gap: 12px;
+  }
+}
+
+.panel{
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--line);
+}
+
+@media (max-width: 900px){
+  .panel{ padding: 12px; }
+}
+
+/* panel titles */
+.panel > h2{
+  margin: 0 0 12px;
+  font-size: 18px;
+  letter-spacing: .2px;
+}
+
+.card{
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
   margin: 12px 0;
+  text-align:left;
+  box-shadow: 0 8px 14px rgba(17,24,39,.04);
 }
 
-.stat{
-  background:#fff;
-  border:1px solid var(--line);
-  border-radius:14px;
-  padding:12px 14px;
-}
-
-.stat-label{
-  font-size:12px;
-  color: var(--muted);
-  margin-bottom:6px;
-}
-
-.stat-value{
-  font-size:20px;
-  font-weight: 950;
+@media (min-width: 901px){
+  .card{ padding: 12px; margin: 10px 0; }
 }
 
 /* banner */
@@ -226,22 +186,39 @@ button:disabled{
   margin: 12px 0;
 }
 
-/* team lists */
-.team-grid{
+/* summary cards */
+.cards-4{
   display:grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap:12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0;
 }
-.team-title{
+
+@media (max-width: 900px){
+  .cards-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.stat{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 14px;
+}
+
+@media (min-width: 901px){
+  .stat{ padding: 10px 12px; }
+}
+
+.stat-label{
+  font-size:12px;
+  color: var(--muted);
+  margin-bottom:6px;
+}
+
+.stat-value{
+  font-size:20px;
   font-weight: 950;
-  margin-bottom: 8px;
 }
-.team-list{
-  margin: 0;
-  padding-left: 18px;
-}
-.team-list li{ margin: 6px 0; }
-.team-empty{ color: var(--muted); font-style: italic; }
 
 /* table */
 .dtr-table{
@@ -270,7 +247,7 @@ button:disabled{
   letter-spacing: .6px;
 }
 
-/* nicer scroll container for your inline overflow:auto wrapper */
+/* nicer scroll container */
 .card > div[style*="overflow:auto"]{
   border-radius: 14px;
   border: 1px solid var(--line);
@@ -284,13 +261,332 @@ video{
   box-shadow: 0 12px 22px rgba(17,24,39,.08);
 }
 
-/* responsive */
+/* team lists */
+.team-grid{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap:12px;
+}
 @media (max-width: 900px){
-  .cards-4{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .team-grid{ grid-template-columns: 1fr; }
 }
 
-@media (max-width: 800px){
-  .app{ grid-template-columns: 1fr; padding: 14px; }
-  .panel{ padding: 14px; }
+.team-title{
+  font-weight: 950;
+  margin-bottom: 8px;
+}
+.team-list{
+  margin: 0;
+  padding-left: 18px;
+}
+.team-list li{ margin: 6px 0; }
+.team-empty{ color: var(--muted); font-style: italic; }
+
+/* compact 3-column info row */
+.kv-row{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+@media (max-width: 600px){
+  .kv-row{ grid-template-columns: 1fr; }
+}
+
+/* =================================
+   DASHBOARD TABS (THIS FIXES MOBILE)
+   ================================= */
+
+.tabs{
+  display:flex;
+  gap:10px;
+  margin: 10px 0 6px;
+  flex-wrap: wrap;
+}
+
+.tab-btn{
+  width:auto !important;
+  padding: 10px 14px !important;
+  border-radius: 999px !important;
+  background: #fff !important;
+  color: var(--text) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: none !important;
+  font-weight: 900 !important;
+  margin-top: 0 !important;
+}
+
+.tab-btn.is-active{
+  background: var(--brand) !important;
+  color: #fff !important;
+  border-color: rgba(225,29,46,.5) !important;
+  box-shadow: 0 10px 18px rgba(225,29,46,.16) !important;
+}
+
+/* THIS is the key */
+.tab-content{ display:none; }
+.tab-content.is-active{ display:block; }
+
+@media (max-width: 480px){
+  .tabs{ gap: 8px; }
+  .tab-btn{
+    flex: 1;
+    text-align:center;
+    padding: 10px 10px !important;
+  }
+}
+
+/* =================================
+   PROGRESS (works on phone)
+   ================================= */
+
+.progress-wrap{ width:100%; }
+
+.progress-track{
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.progress-bar{
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--brand), #ff4d4f);
+  border-radius: 999px;
+}
+
+/* =================================
+   AUTH (LOGIN/REGISTER) LAYOUT
+   ================================= */
+
+.auth{
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 0.6fr 1.4fr;
+  background: #fff;
+}
+
+.auth-left{
+  position: relative;
+  padding: 38px;
+  color: #fff;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 600px at 20% 30%, rgba(255,70,70,0.25), transparent 60%),
+    radial-gradient(800px 500px at 70% 70%, rgba(220,38,38,0.35), transparent 60%),
+    linear-gradient(135deg, #2b0202 0%, #7f1d1d 60%, #2b0202 100%);
+}
+
+.auth-left::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  opacity: .25;
+  background-image:
+    linear-gradient(transparent 96%, rgba(255,0,0,.15) 97%, transparent 100%),
+    linear-gradient(90deg, transparent 96%, rgba(255,0,0,.10) 97%, transparent 100%);
+  background-size: 180px 180px;
+  pointer-events:none;
+}
+
+.auth-brand{
+  position: absolute;
+  left: 38px;
+  bottom: 78px;
+  max-width: 420px;
+  z-index: 2;
+}
+
+.auth-brand h1{
+  margin: 0 0 10px 0;
+  font-size: 32px;
+  letter-spacing: .2px;
+}
+
+.auth-subtitle{
+  margin: 0;
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: rgba(255,255,255,.9);
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.12);
+}
+
+.auth-footer{
+  position: absolute;
+  left: 38px;
+  bottom: 24px;
+  font-size: 12px;
+  color: rgba(255,255,255,.6);
+  z-index: 2;
+}
+
+.auth-right{
+  display: grid;
+  place-items: center;
+  padding: 28px 16px;
+}
+
+.auth-card{
+  width: 100%;
+  max-width: 520px;
+  padding: 10px 6px;
+}
+
+.auth-head{
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+.auth-head h2{
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.auth-note{
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #374151;
+  margin: 12px auto 16px;
+}
+
+.auth-form{
+  padding: 0 6px;
+}
+
+.auth-label{
+  display:block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.auth-form input{
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  outline: none;
+}
+
+.auth-form input:focus{
+  background: #fff;
+  border-color: rgba(225, 29, 46, .45);
+  box-shadow: 0 0 0 3px rgba(225, 29, 46, .14);
+}
+
+.auth-showpass{
+  margin-top: 10px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.auth-links{
+  margin-top: 12px;
+  display:flex;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.auth-links a{
+  text-decoration: none;
+}
+
+.auth-sep{
+  color: #9ca3af;
+}
+
+.auth-actions{
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.auth-actions button{
+  width: 100%;
+  border-radius: 10px;
+}
+
+.btn-danger{
+  background: #dc3545;
+}
+.btn-danger:hover{
+  background: #b02a37;
+}
+
+.auth-bottom{
+  margin-top: 12px;
+  text-align:center;
+  font-size: 13px;
+}
+
+/* Old simple login/register container (ONLY for pages that still use .container) */
+.container{
+  margin-top: 80px;
+  background: var(--panel);
+  padding: 20px;
+  width: 340px;
+  margin-left: auto;
+  margin-right: auto;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+  text-align: center;
+}
+
+.subtitle{
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 15px;
+}
+
+.show-password-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:8px;
+  margin-bottom:10px;
+  justify-content:flex-start;
+}
+
+.show-password-row input[type="checkbox"]{
+  width:16px;
+  height:16px;
+  cursor:pointer;
+}
+
+.show-password-row label{
+  font-size:14px;
+  cursor:pointer;
+}
+
+@media (max-width: 900px){
+  .auth{
+    grid-template-columns: 1fr;
+  }
+  .auth-left{
+    min-height: 260px;
+  }
+  .auth-brand{
+    position: static;
+    margin-top: 120px;
+    max-width: 100%;
+  }
+  .auth-footer{
+    left: 22px;
+  }
 }

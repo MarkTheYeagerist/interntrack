@@ -27,11 +27,27 @@
           <div><b>Name:</b> <span id="uName">-</span></div>
           <span id="uRole" class="badge-role">-</span>
         </div>
+
         <div><b>Department:</b> <span id="uDept">-</span></div>
-        <div><b>Hours needed:</b> <span id="uRequired">-</span></div>
-        <div><b>Hours rendered:</b> <span id="uRendered">-</span></div>
-        <div><b>Hours remaining:</b> <span id="uRemaining">-</span></div>
-        <div><b>Days to complete (8 hrs/day):</b> <span id="uDays">-</span></div>
+
+        <div class="kv-row">
+          <div><b>Hours needed:</b> <span id="uRequired">-</span></div>
+          <div><b>Hours rendered:</b> <span id="uRendered">-</span></div>
+          <div><b>Hours remaining:</b> <span id="uRemaining">-</span></div>
+        </div>
+
+        <div style="margin-top:8px;"><b>Days to complete (8 hrs/day):</b> <span id="uDays">-</span></div>
+
+        <!-- ✅ Progress (fix for mobile) -->
+        <div class="progress-wrap" style="margin-top:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="muted" style="font-weight:700;">Progress</div>
+            <div class="muted" id="progressPct">0%</div>
+          </div>
+          <div class="progress-track">
+            <div id="progressBar" class="progress-bar" style="width:0%"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Summary Cards -->
@@ -57,50 +73,87 @@
         </div>
       </div>
 
-      <!-- Team Status Today -->
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
-          <div>
-            <h3 style="margin:0;">Today’s Team Status</h3>
-            <div class="muted" id="teamSubtitle" style="margin-top:6px;">Loading...</div>
-          </div>
-          <button id="btnRefreshTeam" class="btn-secondary" style="width:auto;">Refresh</button>
-        </div>
+      <!-- ✅ Tabs (works on mobile + desktop) -->
+      <div class="tabs">
+        <button class="tab-btn is-active" type="button" data-tab="today">Today</button>
+        <button class="tab-btn" type="button" data-tab="dtr">DTR</button>
+        <button class="tab-btn" type="button" data-tab="team">Team</button>
+      </div>
 
-        <div class="team-grid" style="margin-top:12px;">
-          <div>
-            <div class="team-title">Onsite (Timed in)</div>
-            <ul id="onsiteList" class="team-list"></ul>
+      <!-- ✅ TODAY TAB -->
+      <div id="tab-today" class="tab-content is-active">
+        <div class="card">
+          <h3 style="margin:0;">Today Snapshot</h3>
+          <div class="muted" style="margin-top:6px;">
+            Tip: Daily credited hours are capped to <b>8 hrs regular + 2 hrs overtime</b> (max <b>10 hrs/day</b>).
           </div>
-          <div>
-            <div class="team-title">WFH (Timed in)</div>
-            <ul id="wfhList" class="team-list"></ul>
-          </div>
-          <div>
-            <div class="team-title">Pending Time Out</div>
-            <ul id="pendingList" class="team-list"></ul>
+
+          <div style="margin-top:10px;">
+            <div class="muted">Status</div>
+            <div style="font-weight:900;" id="todayStatus2">-</div>
+
+            <div class="muted" style="margin-top:8px;">Hours</div>
+            <div style="font-weight:900;" id="todayHours2">-</div>
+
+            <div class="muted" style="margin-top:8px;">Work Type</div>
+            <div style="font-weight:900;" id="todayWorkType2">-</div>
           </div>
         </div>
       </div>
 
-      <!-- DTR Table -->
-      <div class="card">
-        <h3 style="margin:0;">Daily Time Record</h3>
-        <div class="muted" id="monthLabel" style="margin-top:6px;">For the month of -</div>
+      <!-- ✅ DTR TAB -->
+      <div id="tab-dtr" class="tab-content">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+            <div>
+              <h3 style="margin:0;">Daily Time Record</h3>
+              <div class="muted" id="monthLabel" style="margin-top:6px;">For the month of -</div>
+            </div>
+            <button id="btnReloadDTR" class="btn-secondary" style="width:auto;">Reload</button>
+          </div>
 
-        <div style="overflow:auto; margin-top:10px;">
-          <table class="dtr-table">
-            <thead>
-              <tr>
-                <th>DAY</th>
-                <th>DATE</th>
-                <th>ARRIVAL</th>
-                <th>DEPARTURE</th>
-                <th>WORK TYPE</th>
-              </tr>
-            </thead>
-            <tbody id="dtrBody"></tbody>
-          </table>
+          <div style="overflow:auto; margin-top:10px;">
+            <table class="dtr-table">
+              <thead>
+                <tr>
+                  <th>DAY</th>
+                  <th>DATE</th>
+                  <th>ARRIVAL</th>
+                  <th>DEPARTURE</th>
+                  <th>WORK TYPE</th>
+                </tr>
+              </thead>
+              <tbody id="dtrBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ✅ TEAM TAB -->
+      <div id="tab-team" class="tab-content">
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+            <div>
+              <h3 style="margin:0;">Today’s Team Status</h3>
+              <div class="muted" id="teamSubtitle" style="margin-top:6px;">Loading...</div>
+            </div>
+            <button id="btnRefreshTeam" class="btn-secondary" style="width:auto;">Refresh</button>
+          </div>
+
+          <div class="team-grid" style="margin-top:12px;">
+            <div>
+              <div class="team-title">Onsite (Timed in)</div>
+              <ul id="onsiteList" class="team-list"></ul>
+            </div>
+            <div>
+              <div class="team-title">WFH (Timed in)</div>
+              <ul id="wfhList" class="team-list"></ul>
+            </div>
+            <div>
+              <div class="team-title">Pending Time Out</div>
+              <ul id="pendingList" class="team-list"></ul>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -135,7 +188,7 @@
           Rule: Time In allowed <b>8:00 AM onwards</b>. Hours credit starts at <b>9:00 AM</b>.
         </p>
         <p class="muted">
-          Rule: Daily credited hours are capped to <b>8 hrs regular</b> + <b>2 hrs overtime</b> (max <b>10 hrs</b>/day).
+          Rule: Daily credited hours are capped to <b>8 hrs regular + 2 hrs overtime</b> (max <b>10 hrs/day</b>).
         </p>
       </div>
     </div>
@@ -154,6 +207,20 @@
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+    // ===== Tabs (fix mobile: only one section visible) =====
+    function initTabs(){
+      const btns = document.querySelectorAll(".tab-btn");
+      const contents = document.querySelectorAll(".tab-content");
+
+      const show = (key) => {
+        btns.forEach(b => b.classList.toggle("is-active", b.dataset.tab === key));
+        contents.forEach(c => c.classList.toggle("is-active", c.id === `tab-${key}`));
+      };
+
+      btns.forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+      show("today"); // default
+    }
+
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const statusEl = document.getElementById("status");
@@ -166,13 +233,22 @@
     const uRemaining = document.getElementById("uRemaining");
     const uDays = document.getElementById("uDays");
 
+    const progressPct = document.getElementById("progressPct");
+    const progressBar = document.getElementById("progressBar");
+
     const todayStatusEl = document.getElementById("todayStatus");
     const todayHoursEl = document.getElementById("todayHours");
     const todayWorkTypeEl = document.getElementById("todayWorkType");
     const weekHoursEl = document.getElementById("weekHours");
 
+    // mirror values for Today Snapshot card
+    const todayStatus2 = document.getElementById("todayStatus2");
+    const todayHours2 = document.getElementById("todayHours2");
+    const todayWorkType2 = document.getElementById("todayWorkType2");
+
     const dtrBody = document.getElementById("dtrBody");
     const monthLabel = document.getElementById("monthLabel");
+    const btnReloadDTR = document.getElementById("btnReloadDTR");
 
     const btnStartAuto = document.getElementById("btnStartAuto");
     const btnStopAuto = document.getElementById("btnStopAuto");
@@ -217,8 +293,9 @@
       return d;
     }
 
-    function r2(n) {
-      return Math.floor(n * 100) / 100;
+    function formatHours(ms) {
+      const hours = ms / (1000 * 60 * 60);
+      return (Math.floor(hours * 100) / 100).toFixed(2);
     }
 
     function isAM(dateObj) {
@@ -251,47 +328,10 @@
       return dt < nine ? nine : dt;
     }
 
-    function dayKeyFromDate(dt) {
-      const yyyy = dt.getFullYear();
-      const mm = String(dt.getMonth() + 1).padStart(2, "0");
-      const dd = String(dt.getDate()).padStart(2, "0");
-      return `${yyyy}-${mm}-${dd}`;
-    }
-
-    // ✅ Per-day cap: 8 regular + 2 OT = 10 max credited
-    function computeCappedDayHours(attendanceDocsForDay) {
-      let lastIn = null;
-      let totalMs = 0;
-
-      for (const a of attendanceDocsForDay) {
-        if (!a.timestamp) continue;
-        const dt = a.timestamp.toDate();
-
-        if (a.type === "Time In") {
-          const credited = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(dt);
-          lastIn = credited;
-        } else if (a.type === "Time Out" && lastIn) {
-          const out = dt;
-          const diff = out - lastIn;
-          if (diff > 0) totalMs += diff;
-          lastIn = null;
-        }
-      }
-
-      const workedHrs = totalMs / (1000 * 60 * 60);
-
-      const regular = Math.min(8, workedHrs);
-      const overtime = Math.min(2, Math.max(0, workedHrs - 8));
-      const credited = Math.min(10, regular + overtime);
-
-      return {
-        workedHrs: r2(workedHrs),
-        regularHrs: r2(regular),
-        overtimeHrs: r2(overtime),
-        creditedHrs: r2(credited)
-      };
+    // ✅ DAILY CAP: 8 hrs regular + 2 hrs OT = max 10 hrs/day
+    function capDailyMs(ms) {
+      const max = 10 * 60 * 60 * 1000;
+      return Math.min(ms, max);
     }
 
     async function updateWorkTypeLock(uid) {
@@ -412,7 +452,6 @@
       video.style.display = "none";
     }
 
-    // ✅ Timestamp on photo (lower-right) + resize (saves Firestore space too)
     function captureImageBase64() {
       const w = video.videoWidth;
       const h = video.videoHeight;
@@ -496,6 +535,7 @@
         if (!a.timestamp) return;
 
         const dt = a.timestamp.toDate();
+
         const yyyy = dt.getFullYear();
         const mm = String(dt.getMonth() + 1).padStart(2, "0");
         const dd = String(dt.getDate()).padStart(2, "0");
@@ -551,7 +591,7 @@
       });
     }
 
-    // ✅ TOTAL HOURS (Rendered) = sum of capped daily credited hours
+    // ✅ TOTAL HOURS uses credited start time AND caps per-day to 10 hrs
     async function computeRenderedHours(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -561,39 +601,62 @@
 
       const snap = await getDocs(q);
 
-      const byDay = new Map();
+      let lastIn = null;
+      let lastDayKey = null;
+      let dayMs = 0;
+      let totalMs = 0;
+
+      const flushDay = () => {
+        if (dayMs > 0) totalMs += capDailyMs(dayMs);
+        dayMs = 0;
+      };
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-        const dt = a.timestamp.toDate();
-        const key = dayKeyFromDate(dt);
-        if (!byDay.has(key)) byDay.set(key, []);
-        byDay.get(key).push(a);
+
+        if (a.type === "Time In") {
+          const inDt = a.timestamp.toDate();
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(inDt);
+
+          const dayKey = credited.toDateString();
+          if (lastDayKey && dayKey !== lastDayKey) flushDay();
+
+          lastDayKey = dayKey;
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
+          const out = a.timestamp.toDate();
+          const diff = out - lastIn;
+          if (diff > 0) dayMs += diff;
+          lastIn = null;
+        }
       });
 
-      let totalCredited = 0;
+      flushDay();
 
-      for (const arr of byDay.values()) {
-        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
-        const day = computeCappedDayHours(arr);
-        totalCredited += day.creditedHrs;
-      }
-
-      const rounded = r2(totalCredited);
+      const hours = totalMs / (1000 * 60 * 60);
+      const rounded = Math.floor(hours * 100) / 100;
 
       uRendered.textContent = `${rounded.toFixed(2)} hrs`;
 
       const remaining = Math.max(0, (requiredHours || 0) - rounded);
-      const remainingRounded = r2(remaining);
+      const remainingRounded = Math.floor(remaining * 100) / 100;
 
       uRemaining.textContent = requiredHours ? `${remainingRounded.toFixed(2)} hrs` : "-";
 
       if (requiredHours) {
         const daysNeeded = Math.ceil(remainingRounded / 8);
         uDays.textContent = `${daysNeeded} day(s)`;
+
+        const pct = Math.max(0, Math.min(100, (rounded / requiredHours) * 100));
+        progressPct.textContent = `${pct.toFixed(1)}%`;
+        progressBar.style.width = `${pct}%`;
       } else {
         uDays.textContent = "-";
+        progressPct.textContent = "0%";
+        progressBar.style.width = "0%";
       }
     }
 
@@ -620,7 +683,6 @@
       return slots;
     }
 
-    // For user banner reminder
     async function getUserTodayState(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -650,7 +712,7 @@
       return { active, lastInTime, workType };
     }
 
-    // ✅ TODAY summary = capped daily credited hours (8 or 10 max)
+    // ✅ TODAY summary uses credited start time + caps to 10 hrs
     async function loadTodaySummary(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -662,41 +724,51 @@
 
       const snap = await getDocs(q);
 
-      const docs = [];
+      let timeIn = null;
+      let creditedIn = null;
+      let timeOut = null;
       let workType = "-";
-      let hasTimeIn = false;
-      let hasTimeOut = false;
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-        docs.push(a);
-        if (a.workType) workType = a.workType;
-        if (a.type === "Time In") hasTimeIn = true;
-        if (a.type === "Time Out") hasTimeOut = true;
+        const dt = a.timestamp.toDate();
+
+        if (a.type === "Time In" && !timeIn) {
+          timeIn = dt;
+          creditedIn = (typeof a.creditedStartMs === "number") ? new Date(a.creditedStartMs) : creditedStartTime(dt);
+          if (a.workType) workType = a.workType;
+        }
+        if (a.type === "Time Out") {
+          timeOut = dt;
+          if (a.workType) workType = a.workType;
+        }
       });
 
-      docs.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+      const setAll = (s, h, w) => {
+        todayStatusEl.textContent = s;
+        todayHoursEl.textContent = h;
+        todayWorkTypeEl.textContent = w;
 
-      if (!hasTimeIn) {
-        todayStatusEl.textContent = "Not Timed In";
-        todayHoursEl.textContent = "0.00 hrs";
-        todayWorkTypeEl.textContent = "-";
+        todayStatus2.textContent = s;
+        todayHours2.textContent = h;
+        todayWorkType2.textContent = w;
+      };
+
+      if (!timeIn) {
+        setAll("Not Timed In", "0.00 hrs", "-");
         return;
       }
 
-      if (hasTimeIn && !hasTimeOut) {
-        todayStatusEl.textContent = "Timed In (Incomplete)";
-        todayHoursEl.textContent = "—";
-        todayWorkTypeEl.textContent = workType;
+      if (timeIn && !timeOut) {
+        setAll("Timed In (Incomplete)", "—", workType);
         return;
       }
 
-      const day = computeCappedDayHours(docs);
+      const diff = timeOut - (creditedIn || timeIn);
+      const capped = capDailyMs(Math.max(0, diff));
 
-      todayStatusEl.textContent = "Completed";
-      todayHoursEl.textContent = `${day.creditedHrs.toFixed(2)} hrs`;
-      todayWorkTypeEl.textContent = workType;
+      setAll("Completed", `${formatHours(capped)} hrs`, workType);
     }
 
     function getWeekRangeMonSun() {
@@ -715,7 +787,6 @@
       return { mon, nextMon };
     }
 
-    // ✅ WEEK HOURS = sum of capped daily credited hours
     async function loadWeekHours(uid) {
       const { mon, nextMon } = getWeekRangeMonSun();
 
@@ -729,29 +800,43 @@
 
       const snap = await getDocs(q);
 
-      const byDay = new Map();
+      let lastIn = null;
+      let lastDayKey = null;
+      let dayMs = 0;
+      let totalMs = 0;
+
+      const flushDay = () => {
+        if (dayMs > 0) totalMs += capDailyMs(dayMs);
+        dayMs = 0;
+      };
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-        const dt = a.timestamp.toDate();
-        const key = dayKeyFromDate(dt);
-        if (!byDay.has(key)) byDay.set(key, []);
-        byDay.get(key).push(a);
+
+        if (a.type === "Time In") {
+          const inDt = a.timestamp.toDate();
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(inDt);
+
+          const dayKey = credited.toDateString();
+          if (lastDayKey && dayKey !== lastDayKey) flushDay();
+
+          lastDayKey = dayKey;
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
+          const out = a.timestamp.toDate();
+          const diff = out - lastIn;
+          if (diff > 0) dayMs += diff;
+          lastIn = null;
+        }
       });
 
-      let total = 0;
-
-      for (const arr of byDay.values()) {
-        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
-        const day = computeCappedDayHours(arr);
-        total += day.creditedHrs;
-      }
-
-      weekHoursEl.textContent = `${r2(total).toFixed(2)} hrs`;
+      flushDay();
+      weekHoursEl.textContent = `${formatHours(totalMs)} hrs`;
     }
 
-    // ✅ Onsite/WFH + Pending list for today
     async function loadTodayTeamStatus() {
       onsiteList.innerHTML = "";
       wfhList.innerHTML = "";
@@ -824,7 +909,6 @@
       teamSubtitle.textContent = `Active: ${pending.length} | Total users: ${usersSnap.size}`;
     }
 
-    // ✅ In-app reminder banner (if user still timed in after 5:30 PM)
     async function updateReminderBanner() {
       if (!currentUid) return;
 
@@ -838,11 +922,13 @@
       }
     }
 
-    reminderBtn.addEventListener("click", () => {
-      window.timeOut();
-    });
-
+    reminderBtn.addEventListener("click", () => window.timeOut());
     btnRefreshTeam.addEventListener("click", loadTodayTeamStatus);
+
+    btnReloadDTR.addEventListener("click", async () => {
+      if (!currentUid) return;
+      await loadMonthlyDTR(currentUid);
+    });
 
     async function refreshAll() {
       if (!currentUid) return;
@@ -870,7 +956,6 @@
     async function startAutoTimeInLoop() {
       if (!currentUid) return;
 
-      // ✅ 8:00 AM onwards rule
       if (!isAfter8AM(new Date())) {
         alert("Time In is allowed starting 8:00 AM onwards.");
         statusEl.textContent = "Blocked: Too early to Time In.";
@@ -923,15 +1008,12 @@
             workType: workTypeVal,
             imageBase64: captureImageBase64(),
             timestamp: serverTimestamp(),
-
-            // ✅ store credited start for correct computation
             creditedStartMs: credited.getTime()
           });
 
           alert("Time In recorded!");
           statusEl.textContent = "✅ Timed In successfully!";
           await refreshAll();
-
           stopAutoTimeInLoop();
         } catch (e) {
           console.error(e);
@@ -952,9 +1034,7 @@
       }
     });
 
-    btnStopAuto.addEventListener("click", () => {
-      stopAutoTimeInLoop();
-    });
+    btnStopAuto.addEventListener("click", () => stopAutoTimeInLoop());
 
     async function saveAttendance(type) {
       if (!cameraStream) {
@@ -978,7 +1058,6 @@
         return;
       }
 
-      // ✅ block manual Time In before 8AM too (safety)
       if (type === "Time In" && !isAfter8AM(now)) {
         alert("Time In is allowed starting 8:00 AM onwards.");
         statusEl.textContent = "Blocked: Too early to Time In.";
@@ -1020,7 +1099,6 @@
           timestamp: serverTimestamp()
         };
 
-        // ✅ only Time In stores creditedStartMs
         if (type === "Time In") {
           const credited = creditedStartTime(now);
           payload.creditedStartMs = credited.getTime();
@@ -1050,6 +1128,8 @@
     };
 
     onAuthStateChanged(auth, async (user) => {
+      initTabs(); // ✅ tabs fix
+
       if (!user) {
         window.location.href = "index.html";
         return;
@@ -1069,10 +1149,7 @@
 
       statusEl.textContent = "Ready. Click 'Start Auto Time In' to open camera.";
 
-      // refresh reminder every minute (lightweight)
-      setInterval(() => {
-        updateReminderBanner();
-      }, 60000);
+      setInterval(() => updateReminderBanner(), 60000);
     });
 
     window.addEventListener("beforeunload", () => {

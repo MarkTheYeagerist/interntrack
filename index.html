@@ -7,23 +7,64 @@
 </head>
 <body>
 
-  <div class="container">
-    <h2>InternTrack Login</h2>
-    <p class="subtitle">Enter your Company Account and Password</p>
+  <div class="auth">
+    <!-- LEFT BRAND PANEL -->
+    <div class="auth-left">
+      <!-- (Optional) put your logo image here if you want later -->
+      <!-- <img class="auth-logo" src="img/logo.png" alt="InternTrack" /> -->
 
-    <input type="email" id="email" placeholder="Company Account" required>
-    <input type="password" id="password" placeholder="Password" required>
+      <div class="auth-brand">
+        <h1>Platinum Internship Portal</h1>
+        <p class="auth-subtitle">Manage Daily Time Record via this portal.</p>
+      </div>
 
-    <p style="margin-top:8px; margin-bottom:14px;">
-      <a href="#" onclick="forgotPassword(); return false;">Forgot Password?</a>
-      <span style="margin: 0 8px;">|</span>
-      <a href="#" onclick="resendVerification(); return false;">Resend Verification</a>
-    </p>
+      <div class="auth-footer">© 2026 Lunaire Studio</div>
+    </div>
 
-    <button onclick="loginIntern()">Login as Intern</button>
-    <button style="background:#dc3545;" onclick="loginAdmin()">Login as Admin</button>
+    <!-- RIGHT FORM PANEL -->
+    <div class="auth-right">
+      <div class="auth-card">
+        <div class="auth-head">
+          <h2>Login InternTrack Account</h2>
+          <p class="muted">Enter your Company Account and Password</p>
+        </div>
 
-    <p>Don't have account? <a href="register.html">Register</a></p>
+        <div class="auth-note">
+          Use your <b>Company Account</b> and <b>Password</b> to continue.
+        </div>
+
+        <div class="auth-form">
+          <label class="auth-label">Company Account</label>
+          <input type="email" id="email" placeholder="pluk.yourname@gmail.com" required>
+
+          <label class="auth-label" style="margin-top:10px;">Password</label>
+          <input type="password" id="password" placeholder="Password" required>
+
+          <div class="show-password-row auth-showpass">
+            <input type="checkbox" id="showPass" onclick="togglePassword()">
+            <label for="showPass">Show password</label>
+          </div>
+
+          <div class="auth-links">
+            <a href="#" onclick="forgotPassword(); return false;">Forgot Password?</a>
+            <span class="auth-sep">•</span>
+            <a href="#" onclick="resendVerification(); return false;">Resend Verification</a>
+          </div>
+
+          <div class="auth-actions">
+            <button onclick="loginIntern()">Login as Intern</button>
+            <button class="btn-danger" onclick="loginAdmin()">Login as Admin</button>
+          </div>
+
+          <div class="auth-bottom">
+            <span class="muted">Don't have account?</span>
+            <a href="register.html">Register</a>
+          </div>
+
+          <p id="status" class="muted" style="margin-top:10px;"></p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script type="module">
@@ -36,6 +77,8 @@
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
     import { doc, getDoc }
       from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    const statusEl = document.getElementById("status");
 
     window.loginIntern = async function () {
       await loginUser("intern");
@@ -53,6 +96,12 @@
       return document.getElementById("password").value;
     }
 
+    window.togglePassword = function () {
+      const pass = document.getElementById("password");
+      const cb = document.getElementById("showPass");
+      pass.type = cb.checked ? "text" : "password";
+    };
+
     function enforcePluk(email) {
       if (!email.startsWith("pluk.")) {
         alert("Company account must start with 'pluk.'\nExample: pluk.marklawrencebautista@gmail.com");
@@ -65,6 +114,8 @@
       const email = getEmailInput();
       const password = getPasswordInput();
 
+      statusEl.textContent = "";
+
       if (!email || !password) {
         alert("Please fill all fields.");
         return;
@@ -73,12 +124,14 @@
       if (!enforcePluk(email)) return;
 
       try {
+        statusEl.textContent = "Signing in...";
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
         if (!user.emailVerified) {
           alert("Please verify your email before logging in.\nYou can click 'Resend Verification'.");
           await signOut(auth);
+          statusEl.textContent = "Email not verified.";
           return;
         }
 
@@ -89,6 +142,7 @@
           if (role !== "admin") {
             alert("Access denied. Not an admin account.");
             await signOut(auth);
+            statusEl.textContent = "Access denied.";
             return;
           }
           window.location.href = "admin.html";
@@ -98,11 +152,13 @@
 
       } catch (error) {
         alert(error.message);
+        statusEl.textContent = "Login failed.";
       }
     }
 
     window.forgotPassword = async function () {
       const email = getEmailInput();
+      statusEl.textContent = "";
 
       if (!email) {
         alert("Please enter your Company Account email first.");
@@ -114,14 +170,17 @@
       try {
         await sendPasswordResetEmail(auth, email);
         alert("Password reset email sent!\nCheck your inbox/spam for the reset link.");
+        statusEl.textContent = "Reset email sent.";
       } catch (error) {
         alert(error.message);
+        statusEl.textContent = "Reset failed.";
       }
     };
 
     window.resendVerification = async function () {
       const email = getEmailInput();
       const password = getPasswordInput();
+      statusEl.textContent = "";
 
       if (!email || !password) {
         alert("Enter your Company Account and Password first, then click Resend Verification.");
@@ -137,15 +196,18 @@
         if (user.emailVerified) {
           alert("Your email is already verified. You can log in now.");
           await signOut(auth);
+          statusEl.textContent = "Already verified.";
           return;
         }
 
         await sendEmailVerification(user);
         alert("Verification email sent!\nPlease check your inbox/spam, then log in again.");
+        statusEl.textContent = "Verification sent.";
 
         await signOut(auth);
       } catch (error) {
         alert(error.message);
+        statusEl.textContent = "Resend failed.";
       }
     };
   </script>

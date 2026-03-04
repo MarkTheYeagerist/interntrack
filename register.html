@@ -7,30 +7,72 @@
 </head>
 <body>
 
-  <div class="container">
-    <h2>Register</h2>
+  <div class="auth">
 
-    <form id="registerForm">
-      <input type="text" id="name" placeholder="Full Name" required>
-      <input type="text" id="department" placeholder="Department (e.g., BSIT)" required>
-      <input type="number" id="requiredHours" placeholder="Hours needed to complete" min="1" required>
-
-      <hr style="margin: 14px 0;">
-
-      <input type="email" id="email" placeholder="Email (must start with pluk.)" required>
-
-      <input type="password" id="password" placeholder="Password" required>
-      <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
-
-      <div class="show-password-row">
-        <input type="checkbox" id="showPassword">
-        <label for="showPassword">Show Password</label>
+    <!-- LEFT: Branding panel (same as login) -->
+    <div class="auth-left">
+      <div class="auth-brand">
+        <h1>InternTrack</h1>
+        <p class="auth-subtitle">Create your internship account to start logging DTR.</p>
       </div>
 
-      <button id="registerBtn" type="submit">Register</button>
-    </form>
+      <div class="auth-footer">© 2026 Lunaire Studio</div>
+    </div>
 
-    <p>Already have account? <a href="index.html">Login</a></p>
+    <!-- RIGHT: Register form -->
+    <div class="auth-right">
+      <div class="auth-card">
+
+        <div class="auth-head">
+          <h2>Create Account</h2>
+          <div class="muted" style="margin-top:6px;">Fill in your details and verify your email.</div>
+        </div>
+
+        <div class="auth-note">
+          Use your <b>Company Account (starts with <code>pluk.</code>)</b> and a strong password to register.
+        </div>
+
+        <form id="registerForm" class="auth-form">
+
+          <label class="auth-label">Full Name</label>
+          <input type="text" id="name" placeholder="Full Name" required>
+
+          <label class="auth-label">Department</label>
+          <input type="text" id="department" placeholder="Department (e.g., BSIT)" required>
+
+          <label class="auth-label">Required Hours</label>
+          <input type="number" id="requiredHours" placeholder="Hours needed to complete" min="1" required>
+
+          <hr style="margin: 14px 0; border:0; border-top:1px solid #e5e7eb;">
+
+          <label class="auth-label">Company Account</label>
+          <input type="email" id="email" placeholder="Email (must start with pluk.)" required>
+
+          <label class="auth-label">Password</label>
+          <input type="password" id="password" placeholder="Password" required>
+
+          <label class="auth-label">Confirm Password</label>
+          <input type="password" id="confirmPassword" placeholder="Confirm Password" required>
+
+          <div class="show-password-row auth-showpass">
+            <input type="checkbox" id="showPassword">
+            <label for="showPassword">Show password</label>
+          </div>
+
+          <div class="auth-actions">
+            <button id="registerBtn" type="submit">Register</button>
+            <button type="button" class="btn-secondary" onclick="goLogin()">Back to Login</button>
+          </div>
+
+          <div class="auth-bottom">
+            Already have an account? <a href="index.html">Login</a>
+          </div>
+
+        </form>
+
+      </div>
+    </div>
+
   </div>
 
   <script type="module">
@@ -48,6 +90,10 @@
     const passwordInput = document.getElementById("password");
     const confirmPasswordInput = document.getElementById("confirmPassword");
     const showPasswordCheckbox = document.getElementById("showPassword");
+
+    window.goLogin = function () {
+      window.location.href = "index.html";
+    };
 
     showPasswordCheckbox.addEventListener("change", () => {
       const t = showPasswordCheckbox.checked ? "text" : "password";
