@@ -72,13 +72,29 @@
 
       <!-- Attendance logs -->
       <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-          <h3 style="margin:0;">Attendance Logs</h3>
-          <select id="logFilter" style="max-width:220px;">
-            <option value="all">All</option>
-            <option value="today">Today</option>
-            <option value="month">This Month</option>
-          </select>
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">Attendance Logs</h3>
+            <div class="muted" style="margin-top:6px;" id="logSubtitle">Showing latest 100 logs.</div>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+            <div>
+              <label class="muted"><b>Filter</b></label>
+              <select id="logFilter" style="min-width:220px;">
+                <option value="all">All</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom Date</option>
+              </select>
+            </div>
+
+            <div id="customDateWrap" style="display:none;">
+              <label class="muted"><b>Pick date</b></label>
+              <input type="date" id="customLogDate" />
+            </div>
+          </div>
         </div>
 
         <div style="overflow:auto; margin-top:10px;">
@@ -134,7 +150,7 @@
     </div>
   </div>
 
-  <!-- ZIP + XLSX libraries (no card needed) -->
+  <!-- ZIP + XLSX libraries -->
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
@@ -145,7 +161,7 @@
       doc, getDoc,
       collection, getDocs,
       query, where, orderBy, limit,
-      updateDoc, deleteField, writeBatch
+      deleteField, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
     const adminStatus = document.getElementById("adminStatus");
@@ -171,7 +187,12 @@
     const photoTitle = document.getElementById("photoTitle");
     const photoSubtitle = document.getElementById("photoSubtitle");
 
-    let lastWeekDocRefs = []; // docs with images for selected week
+    // ✅ custom date controls
+    const customDateWrap = document.getElementById("customDateWrap");
+    const customLogDate = document.getElementById("customLogDate");
+    const logSubtitle = document.getElementById("logSubtitle");
+
+    let lastWeekDocRefs = [];
 
     function openPhotoModal({ name, type, dt, img }) {
       photoTitle.textContent = `${name || "Unknown"} — ${type || "Attendance"}`;
@@ -195,21 +216,27 @@
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
 
+    function startOfDay(d) {
+      const x = new Date(d);
+      x.setHours(0,0,0,0);
+      return x;
+    }
+    function startOfNextDay(d) {
+      const x = startOfDay(d);
+      x.setDate(x.getDate() + 1);
+      return x;
+    }
+
     function startOfToday() {
-      const d = new Date();
-      d.setHours(0,0,0,0);
-      return d;
+      return startOfDay(new Date());
     }
     function startOfTomorrow() {
-      const d = new Date();
-      d.setHours(0,0,0,0);
-      d.setDate(d.getDate() + 1);
-      return d;
+      return startOfNextDay(new Date());
     }
 
     function mondayOfWeek(dateObj) {
       const d = new Date(dateObj);
-      const day = d.getDay(); // 0=Sun
+      const day = d.getDay();
       const diffToMon = (day === 0 ? -6 : 1) - day;
       d.setDate(d.getDate() + diffToMon);
       d.setHours(0, 0, 0, 0);
@@ -223,11 +250,11 @@
       const mon = mondayOfWeek(picked);
 
       const sat = new Date(mon);
-      sat.setDate(mon.getDate() + 5); // Saturday start
+      sat.setDate(mon.getDate() + 5);
       sat.setHours(0, 0, 0, 0);
 
       const fri = new Date(mon);
-      fri.setDate(mon.getDate() + 4); // Friday
+      fri.setDate(mon.getDate() + 4);
       fri.setHours(0, 0, 0, 0);
 
       return { mon, fri, sat };
@@ -259,6 +286,51 @@
       URL.revokeObjectURL(url);
     }
 
+    // ===== Same hours rules as dashboard =====
+    function r2(n) { return Math.floor(n * 100) / 100; }
+
+    function creditedStartTime(dt) {
+      const nine = new Date(dt);
+      nine.setHours(9, 0, 0, 0);
+      return dt < nine ? nine : dt;
+    }
+
+    function dayKeyFromDate(dt) {
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function computeCappedDayHours(attendanceDocsForDay) {
+      let lastIn = null;
+      let totalMs = 0;
+
+      for (const a of attendanceDocsForDay) {
+        if (!a.timestamp) continue;
+        const dt = a.timestamp.toDate();
+
+        if (a.type === "Time In") {
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(dt);
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
+          const out = dt;
+          const diff = out - lastIn;
+          if (diff > 0) totalMs += diff;
+          lastIn = null;
+        }
+      }
+
+      const workedHrs = totalMs / (1000 * 60 * 60);
+      const regular = Math.min(8, workedHrs);
+      const overtime = Math.min(2, Math.max(0, workedHrs - 8));
+      const credited = Math.min(10, regular + overtime);
+
+      return { creditedHrs: r2(credited) };
+    }
+
     async function computeRendered(uid) {
       const snap = await getDocs(query(
         collection(db, "attendance"),
@@ -266,21 +338,25 @@
         orderBy("timestamp", "asc")
       ));
 
-      let lastIn = null;
-      let total = 0;
+      const byDay = new Map();
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
-        if (a.type === "Time In") lastIn = a.timestamp.toDate();
-        else if (a.type === "Time Out" && lastIn) {
-          total += (a.timestamp.toDate() - lastIn);
-          lastIn = null;
-        }
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(a);
       });
 
-      return Math.floor((total / 3600000) * 100) / 100;
+      let totalCredited = 0;
+
+      for (const arr of byDay.values()) {
+        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+        totalCredited += computeCappedDayHours(arr).creditedHrs;
+      }
+
+      return r2(totalCredited);
     }
 
     async function loadInterns() {
@@ -307,8 +383,8 @@
           <td>${u.name ?? ""}</td>
           <td>${u.department ?? ""}</td>
           <td>${required} hrs</td>
-          <td>${rendered} hrs</td>
-          <td>${remaining} hrs</td>
+          <td>${rendered.toFixed(2)} hrs</td>
+          <td>${remaining.toFixed(2)} hrs</td>
         `;
         internBody.appendChild(tr);
       }
@@ -334,16 +410,48 @@
 
       const now = new Date();
 
+      // figure date range filter
+      let rangeStart = null;
+      let rangeEnd = null;
+
+      if (logFilter.value === "today") {
+        rangeStart = startOfToday();
+        rangeEnd = startOfTomorrow();
+        logSubtitle.textContent = `Showing logs for today (${ymd(rangeStart)}).`;
+      } else if (logFilter.value === "yesterday") {
+        const y = new Date();
+        y.setDate(y.getDate() - 1);
+        rangeStart = startOfDay(y);
+        rangeEnd = startOfNextDay(y);
+        logSubtitle.textContent = `Showing logs for yesterday (${ymd(rangeStart)}).`;
+      } else if (logFilter.value === "custom") {
+        if (!customLogDate.value) {
+          logsBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Pick a date first.</td></tr>`;
+          logSubtitle.textContent = "Custom date selected. Please pick a date.";
+          return;
+        }
+        const picked = new Date(customLogDate.value + "T00:00:00");
+        rangeStart = startOfDay(picked);
+        rangeEnd = startOfNextDay(picked);
+        logSubtitle.textContent = `Showing logs for ${ymd(rangeStart)}.`;
+      } else if (logFilter.value === "month") {
+        logSubtitle.textContent = "Showing logs for this month (latest 100 only).";
+      } else {
+        logSubtitle.textContent = "Showing latest 100 logs.";
+      }
+
+      let shown = 0;
+
       logsSnap.forEach(docu => {
         const a = docu.data();
         const dt = a.timestamp?.toDate();
         if (!dt) return;
 
-        if (logFilter.value === "today") {
-          if (dt.toDateString() !== now.toDateString()) return;
-        }
+        // apply filter
         if (logFilter.value === "month") {
           if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return;
+        } else if (rangeStart && rangeEnd) {
+          if (!(dt >= rangeStart && dt < rangeEnd)) return;
         }
 
         const u = userMap.get(a.userId) || {};
@@ -363,6 +471,7 @@
         `;
 
         logsBody.appendChild(tr);
+        shown++;
 
         if (hasImg) {
           const btn = tr.querySelector(".view-photo-btn");
@@ -376,9 +485,12 @@
           });
         }
       });
+
+      if (shown === 0) {
+        logsBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No logs found for this filter.</td></tr>`;
+      }
     }
 
-    // ✅ Pending time-out today
     async function loadPendingToday() {
       pendingAdminList.innerHTML = "";
 
@@ -393,7 +505,7 @@
         orderBy("timestamp", "asc")
       ));
 
-      const state = new Map(); // uid -> {active, workType, lastInTime}
+      const state = new Map();
       attSnap.forEach(docu => {
         const a = docu.data();
         if (!a.userId || !a.timestamp) return;
@@ -434,7 +546,6 @@
       pendingSubtitle.textContent = `Pending: ${pending.length} | Total users: ${usersSnap.size}`;
     }
 
-    // ✅ Weekly export ZIP: XLSX + images
     async function exportWeekZip() {
       exportStatus.textContent = "";
       btnRemoveImages.disabled = true;
@@ -507,14 +618,12 @@
           row.imageFile = `images/${filename}`;
           imgCount++;
 
-          // keep refs so we can delete images after export
           lastWeekDocRefs.push(docu.ref);
         }
 
         rows.push(row);
       });
 
-      // XLSX
       const ws = window.XLSX.utils.json_to_sheet(rows);
       const wb = window.XLSX.utils.book_new();
       window.XLSX.utils.book_append_sheet(wb, ws, "Week");
@@ -528,68 +637,77 @@
 
       exportStatus.textContent = `Downloaded ZIP ✅ (Rows: ${rows.length}, Images: ${imgCount})`;
 
-      // Enable remove images button if we have images
       btnRemoveImages.disabled = lastWeekDocRefs.length === 0;
     }
 
-    // ✅ Remove images: delete imageBase64 field only (keep logs)
-      async function removeWeekImages() {
-        const range = getWorkWeekRangeFromDateInput(weekDate.value);
-        if (!range) {
-          alert("Pick a date first.");
+    async function removeWeekImages() {
+      const range = getWorkWeekRangeFromDateInput(weekDate.value);
+      if (!range) {
+        alert("Pick a date first.");
+        return;
+      }
+
+      const { mon, fri, sat } = range;
+
+      const ok = confirm(
+        `Remove images for: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)?\n\nThis keeps logs and only removes imageBase64.`
+      );
+      if (!ok) return;
+
+      exportStatus.textContent = "Finding docs with images for this week...";
+
+      try {
+        const snap = await getDocs(query(
+          collection(db, "attendance"),
+          where("timestamp", ">=", mon),
+          where("timestamp", "<", sat),
+          orderBy("timestamp", "asc")
+        ));
+
+        const refs = [];
+        snap.forEach(d => {
+          const a = d.data();
+          if (a.imageBase64) refs.push(d.ref);
+        });
+
+        if (refs.length === 0) {
+          exportStatus.textContent = "No images found to remove for this week.";
+          await loadLogs();
           return;
         }
 
-        const { mon, fri, sat } = range;
+        exportStatus.textContent = `Removing images... Docs: ${refs.length}`;
 
-        const ok = confirm(
-          `Remove images for: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)?\n\nThis keeps logs and only removes imageBase64.`
-        );
-        if (!ok) return;
-
-        exportStatus.textContent = "Finding docs with images for this week...";
-
-        try {
-          // Find ALL attendance docs in week that still have images
-          const snap = await getDocs(query(
-            collection(db, "attendance"),
-            where("timestamp", ">=", mon),
-            where("timestamp", "<", sat),
-            orderBy("timestamp", "asc")
-          ));
-
-          const refs = [];
-          snap.forEach(d => {
-            const a = d.data();
-            if (a.imageBase64) refs.push(d.ref);
-          });
-
-          if (refs.length === 0) {
-            exportStatus.textContent = "No images found to remove for this week.";
-            await loadLogs();
-            return;
-          }
-
-          exportStatus.textContent = `Removing images... Docs: ${refs.length}`;
-
-          // Batch deleteField in chunks
-          let idx = 0;
-          while (idx < refs.length) {
-            const batch = writeBatch(db);
-            const chunk = refs.slice(idx, idx + 450);
-            chunk.forEach(ref => batch.update(ref, { imageBase64: deleteField() }));
-            await batch.commit();
-            idx += chunk.length;
-          }
-
-          exportStatus.textContent = `Images removed ✅ (${refs.length} docs updated). Refreshing...`;
-          await loadLogs();
-        } catch (err) {
-          console.error(err);
-          exportStatus.textContent = "❌ Failed to remove images: " + (err?.message || err);
-          alert("Remove failed. Check Console (F12) for the error.");
+        let idx = 0;
+        while (idx < refs.length) {
+          const batch = writeBatch(db);
+          const chunk = refs.slice(idx, idx + 450);
+          chunk.forEach(ref => batch.update(ref, { imageBase64: deleteField() }));
+          await batch.commit();
+          idx += chunk.length;
         }
+
+        exportStatus.textContent = `Images removed ✅ (${refs.length} docs updated). Refreshing...`;
+        await loadLogs();
+      } catch (err) {
+        console.error(err);
+        exportStatus.textContent = "❌ Failed to remove images: " + (err?.message || err);
+        alert("Remove failed. Check Console (F12) for the error.");
       }
+    }
+
+    function syncCustomDateVisibility() {
+      if (logFilter.value === "custom") {
+        customDateWrap.style.display = "block";
+        if (!customLogDate.value) {
+          // default to today
+          const t = new Date();
+          customLogDate.value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+        }
+      } else {
+        customDateWrap.style.display = "none";
+      }
+    }
 
     searchIntern.addEventListener("input", () => {
       const filter = searchIntern.value.toLowerCase();
@@ -598,7 +716,13 @@
       });
     });
 
-    logFilter.addEventListener("change", loadLogs);
+    logFilter.addEventListener("change", async () => {
+      syncCustomDateVisibility();
+      await loadLogs();
+    });
+
+    customLogDate.addEventListener("change", loadLogs);
+
     btnRefreshPending.addEventListener("click", loadPendingToday);
 
     btnExportZip.addEventListener("click", exportWeekZip);
@@ -627,7 +751,6 @@
       adminStatus.textContent = "Admin access granted.";
       await loadPendingToday();
       await loadInterns();
-      await loadLogs();
 
       // default week date = today
       const today = new Date();
@@ -635,6 +758,12 @@
       const mm = String(today.getMonth()+1).padStart(2,"0");
       const dd = String(today.getDate()).padStart(2,"0");
       weekDate.value = `${yyyy}-${mm}-${dd}`;
+
+      // default custom log date = today
+      customLogDate.value = `${yyyy}-${mm}-${dd}`;
+
+      syncCustomDateVisibility();
+      await loadLogs();
     });
   </script>
 

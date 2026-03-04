@@ -134,6 +134,9 @@
         <p class="muted">
           Rule: Time In allowed <b>8:00 AM onwards</b>. Hours credit starts at <b>9:00 AM</b>.
         </p>
+        <p class="muted">
+          Rule: Daily credited hours are capped to <b>8 hrs regular</b> + <b>2 hrs overtime</b> (max <b>10 hrs</b>/day).
+        </p>
       </div>
     </div>
 
@@ -214,9 +217,8 @@
       return d;
     }
 
-    function formatHours(ms) {
-      const hours = ms / (1000 * 60 * 60);
-      return (Math.floor(hours * 100) / 100).toFixed(2);
+    function r2(n) {
+      return Math.floor(n * 100) / 100;
     }
 
     function isAM(dateObj) {
@@ -247,6 +249,49 @@
       const nine = new Date(dt);
       nine.setHours(9, 0, 0, 0);
       return dt < nine ? nine : dt;
+    }
+
+    function dayKeyFromDate(dt) {
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // ✅ Per-day cap: 8 regular + 2 OT = 10 max credited
+    function computeCappedDayHours(attendanceDocsForDay) {
+      let lastIn = null;
+      let totalMs = 0;
+
+      for (const a of attendanceDocsForDay) {
+        if (!a.timestamp) continue;
+        const dt = a.timestamp.toDate();
+
+        if (a.type === "Time In") {
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(dt);
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
+          const out = dt;
+          const diff = out - lastIn;
+          if (diff > 0) totalMs += diff;
+          lastIn = null;
+        }
+      }
+
+      const workedHrs = totalMs / (1000 * 60 * 60);
+
+      const regular = Math.min(8, workedHrs);
+      const overtime = Math.min(2, Math.max(0, workedHrs - 8));
+      const credited = Math.min(10, regular + overtime);
+
+      return {
+        workedHrs: r2(workedHrs),
+        regularHrs: r2(regular),
+        overtimeHrs: r2(overtime),
+        creditedHrs: r2(credited)
+      };
     }
 
     async function updateWorkTypeLock(uid) {
@@ -451,7 +496,6 @@
         if (!a.timestamp) return;
 
         const dt = a.timestamp.toDate();
-
         const yyyy = dt.getFullYear();
         const mm = String(dt.getMonth() + 1).padStart(2, "0");
         const dd = String(dt.getDate()).padStart(2, "0");
@@ -507,7 +551,7 @@
       });
     }
 
-    // ✅ TOTAL HOURS uses credited start time
+    // ✅ TOTAL HOURS (Rendered) = sum of capped daily credited hours
     async function computeRenderedHours(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -517,36 +561,33 @@
 
       const snap = await getDocs(q);
 
-      let lastIn = null;
-      let totalMs = 0;
+      const byDay = new Map();
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
-        if (a.type === "Time In") {
-          const inDt = a.timestamp.toDate();
-          const credited = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(inDt);
-          lastIn = credited;
-        } else if (a.type === "Time Out" && lastIn) {
-          const out = a.timestamp.toDate();
-          const diff = out - lastIn;
-          if (diff > 0) totalMs += diff;
-          lastIn = null;
-        }
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(a);
       });
 
-      const hours = totalMs / (1000 * 60 * 60);
-      const rounded = Math.floor(hours * 100) / 100;
+      let totalCredited = 0;
 
-      uRendered.textContent = `${rounded} hrs`;
+      for (const arr of byDay.values()) {
+        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+        const day = computeCappedDayHours(arr);
+        totalCredited += day.creditedHrs;
+      }
+
+      const rounded = r2(totalCredited);
+
+      uRendered.textContent = `${rounded.toFixed(2)} hrs`;
 
       const remaining = Math.max(0, (requiredHours || 0) - rounded);
-      const remainingRounded = Math.floor(remaining * 100) / 100;
+      const remainingRounded = r2(remaining);
 
-      uRemaining.textContent = requiredHours ? `${remainingRounded} hrs` : "-";
+      uRemaining.textContent = requiredHours ? `${remainingRounded.toFixed(2)} hrs` : "-";
 
       if (requiredHours) {
         const daysNeeded = Math.ceil(remainingRounded / 8);
@@ -609,7 +650,7 @@
       return { active, lastInTime, workType };
     }
 
-    // ✅ TODAY summary uses credited start time too
+    // ✅ TODAY summary = capped daily credited hours (8 or 10 max)
     async function loadTodaySummary(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -621,44 +662,40 @@
 
       const snap = await getDocs(q);
 
-      let timeIn = null;
-      let creditedIn = null;
-      let timeOut = null;
+      const docs = [];
       let workType = "-";
+      let hasTimeIn = false;
+      let hasTimeOut = false;
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-        const dt = a.timestamp.toDate();
-
-        if (a.type === "Time In" && !timeIn) {
-          timeIn = dt;
-          creditedIn = (typeof a.creditedStartMs === "number") ? new Date(a.creditedStartMs) : creditedStartTime(dt);
-          if (a.workType) workType = a.workType;
-        }
-        if (a.type === "Time Out") {
-          timeOut = dt;
-          if (a.workType) workType = a.workType;
-        }
+        docs.push(a);
+        if (a.workType) workType = a.workType;
+        if (a.type === "Time In") hasTimeIn = true;
+        if (a.type === "Time Out") hasTimeOut = true;
       });
 
-      if (!timeIn) {
+      docs.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+
+      if (!hasTimeIn) {
         todayStatusEl.textContent = "Not Timed In";
         todayHoursEl.textContent = "0.00 hrs";
         todayWorkTypeEl.textContent = "-";
         return;
       }
 
-      if (timeIn && !timeOut) {
+      if (hasTimeIn && !hasTimeOut) {
         todayStatusEl.textContent = "Timed In (Incomplete)";
         todayHoursEl.textContent = "—";
         todayWorkTypeEl.textContent = workType;
         return;
       }
 
-      const diff = timeOut - (creditedIn || timeIn);
+      const day = computeCappedDayHours(docs);
+
       todayStatusEl.textContent = "Completed";
-      todayHoursEl.textContent = `${formatHours(Math.max(0, diff))} hrs`;
+      todayHoursEl.textContent = `${day.creditedHrs.toFixed(2)} hrs`;
       todayWorkTypeEl.textContent = workType;
     }
 
@@ -678,7 +715,7 @@
       return { mon, nextMon };
     }
 
-    // ✅ WEEK HOURS uses credited start time
+    // ✅ WEEK HOURS = sum of capped daily credited hours
     async function loadWeekHours(uid) {
       const { mon, nextMon } = getWeekRangeMonSun();
 
@@ -692,28 +729,26 @@
 
       const snap = await getDocs(q);
 
-      let lastIn = null;
-      let totalMs = 0;
+      const byDay = new Map();
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
-        if (a.type === "Time In") {
-          const inDt = a.timestamp.toDate();
-          const credited = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(inDt);
-          lastIn = credited;
-        } else if (a.type === "Time Out" && lastIn) {
-          const out = a.timestamp.toDate();
-          const diff = out - lastIn;
-          if (diff > 0) totalMs += diff;
-          lastIn = null;
-        }
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(a);
       });
 
-      weekHoursEl.textContent = `${formatHours(totalMs)} hrs`;
+      let total = 0;
+
+      for (const arr of byDay.values()) {
+        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+        const day = computeCappedDayHours(arr);
+        total += day.creditedHrs;
+      }
+
+      weekHoursEl.textContent = `${r2(total).toFixed(2)} hrs`;
     }
 
     // ✅ Onsite/WFH + Pending list for today
