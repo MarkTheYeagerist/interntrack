@@ -38,7 +38,6 @@
 
         <div style="margin-top:8px;"><b>Days to complete (8 hrs/day):</b> <span id="uDays">-</span></div>
 
-        <!-- ✅ Progress (fix for mobile) -->
         <div class="progress-wrap" style="margin-top:12px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div class="muted" style="font-weight:700;">Progress</div>
@@ -73,14 +72,13 @@
         </div>
       </div>
 
-      <!-- ✅ Tabs (works on mobile + desktop) -->
       <div class="tabs">
         <button class="tab-btn is-active" type="button" data-tab="today">Today</button>
         <button class="tab-btn" type="button" data-tab="dtr">DTR</button>
         <button class="tab-btn" type="button" data-tab="team">Team</button>
       </div>
 
-      <!-- ✅ TODAY TAB -->
+      <!-- TODAY TAB -->
       <div id="tab-today" class="tab-content is-active">
         <div class="card">
           <h3 style="margin:0;">Today Snapshot</h3>
@@ -101,7 +99,7 @@
         </div>
       </div>
 
-      <!-- ✅ DTR TAB -->
+      <!-- DTR TAB -->
       <div id="tab-dtr" class="tab-content">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
@@ -129,7 +127,7 @@
         </div>
       </div>
 
-      <!-- ✅ TEAM TAB -->
+      <!-- TEAM TAB -->
       <div id="tab-team" class="tab-content">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
@@ -165,20 +163,29 @@
       <h2>Attendance</h2>
 
       <div class="card">
-        <label><b>Work Type</b></label>
+        <label for="workType"><b>Work Type</b></label>
         <select id="workType">
+          <option value="">Select work type</option>
           <option value="Onsite">Onsite</option>
           <option value="WFH">Work From Home</option>
         </select>
 
-        <p class="muted" style="margin-top:10px;">Camera Preview</p>
-        <video id="video" autoplay playsinline style="display:none; width:100%; max-width:420px; border-radius:10px;"></video>
-        <canvas id="canvas" style="display:none;"></canvas>
+        <div id="attendanceActions" style="display:none; margin-top:12px;">
+          <p id="cameraLabel" class="muted" style="margin-top:10px; display:none;">Camera Preview</p>
+          <video
+            id="video"
+            autoplay
+            playsinline
+            muted
+            style="display:none; width:100%; max-width:420px; border-radius:10px; transform:scaleX(-1);"
+          ></video>
+          <canvas id="canvas" style="display:none;"></canvas>
 
-        <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
-          <button id="btnStartAuto" type="button">Start Auto Time In</button>
-          <button id="btnStopAuto" type="button" class="btn-secondary" disabled>Stop</button>
-          <button onclick="timeOut()" type="button">Time Out</button>
+          <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+            <button id="btnStartAuto" type="button" style="display:none;">Start Auto Time In</button>
+            <button id="btnStopAuto" type="button" class="btn-secondary" disabled style="display:none;">Stop</button>
+            <button id="btnTimeOut" type="button" style="display:none;">Time Out Now</button>
+          </div>
         </div>
 
         <p class="muted" style="margin-top:10px;">
@@ -207,7 +214,6 @@
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    // ===== Tabs (fix mobile: only one section visible) =====
     function initTabs(){
       const btns = document.querySelectorAll(".tab-btn");
       const contents = document.querySelectorAll(".tab-content");
@@ -218,7 +224,7 @@
       };
 
       btns.forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
-      show("today"); // default
+      show("today");
     }
 
     const video = document.getElementById("video");
@@ -241,7 +247,6 @@
     const todayWorkTypeEl = document.getElementById("todayWorkType");
     const weekHoursEl = document.getElementById("weekHours");
 
-    // mirror values for Today Snapshot card
     const todayStatus2 = document.getElementById("todayStatus2");
     const todayHours2 = document.getElementById("todayHours2");
     const todayWorkType2 = document.getElementById("todayWorkType2");
@@ -250,31 +255,92 @@
     const monthLabel = document.getElementById("monthLabel");
     const btnReloadDTR = document.getElementById("btnReloadDTR");
 
+    const workTypeSelect = document.getElementById("workType");
+    const attendanceActions = document.getElementById("attendanceActions");
+    const cameraLabel = document.getElementById("cameraLabel");
+
     const btnStartAuto = document.getElementById("btnStartAuto");
     const btnStopAuto = document.getElementById("btnStopAuto");
+    const btnTimeOut = document.getElementById("btnTimeOut");
 
-    // Team status elements
     const teamSubtitle = document.getElementById("teamSubtitle");
     const onsiteList = document.getElementById("onsiteList");
     const wfhList = document.getElementById("wfhList");
     const pendingList = document.getElementById("pendingList");
     const btnRefreshTeam = document.getElementById("btnRefreshTeam");
 
-    // Reminder banner
     const reminderBanner = document.getElementById("reminderBanner");
     const reminderText = document.getElementById("reminderText");
     const reminderBtn = document.getElementById("reminderBtn");
 
     let cameraStream = null;
     let modelsLoaded = false;
-
     let currentUid = null;
     let requiredHours = 0;
-
-    let isAutoTimingIn = false;
-    let autoScanInterval = null;
-
     let hasFace = false;
+    let savedFaceDescriptor = null;
+
+    let autoScanInterval = null;
+    let verificationCancelled = false;
+    let faceMatchStartTime = null;
+
+    const REQUIRED_MATCH_MS = 5000;
+    const FACE_CHECK_INTERVAL_MS = 250;
+
+    function setAttendanceUI(mode) {
+      attendanceActions.style.display = "block";
+
+      btnStartAuto.style.display = "none";
+      btnStopAuto.style.display = "none";
+      btnTimeOut.style.display = "none";
+      cameraLabel.style.display = "none";
+      video.style.display = "none";
+
+      if (mode === "initial") {
+        attendanceActions.style.display = "none";
+        return;
+      }
+
+      if (mode === "ready") {
+        btnStartAuto.style.display = "inline-block";
+        return;
+      }
+
+      if (mode === "scanning") {
+        cameraLabel.style.display = "block";
+        video.style.display = "block";
+        btnStopAuto.style.display = "inline-block";
+        return;
+      }
+
+      if (mode === "timedIn" || mode === "locked") {
+        btnTimeOut.style.display = "inline-block";
+      }
+    }
+
+    function resetFaceHold() {
+      faceMatchStartTime = null;
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function resetAttendanceCameraUI(mode = "ready") {
+      if (autoScanInterval) {
+        clearInterval(autoScanInterval);
+        autoScanInterval = null;
+      }
+
+      verificationCancelled = false;
+      resetFaceHold();
+
+      btnStartAuto.disabled = false;
+      btnStopAuto.disabled = true;
+
+      stopCamera();
+      setAttendanceUI(mode);
+    }
 
     function formatTime(d) {
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -321,21 +387,18 @@
       return now >= cutoff;
     }
 
-    // ✅ CREDIT START TIME RULE: hours start counting at 9:00 AM
     function creditedStartTime(dt) {
       const nine = new Date(dt);
       nine.setHours(9, 0, 0, 0);
       return dt < nine ? nine : dt;
     }
 
-    // ✅ DAILY CAP: 8 hrs regular + 2 hrs OT = max 10 hrs/day
     function capDailyMs(ms) {
       const max = 10 * 60 * 60 * 1000;
       return Math.min(ms, max);
     }
 
     async function updateWorkTypeLock(uid) {
-      const workTypeSelect = document.getElementById("workType");
       if (!workTypeSelect) return;
 
       const q = query(
@@ -366,8 +429,15 @@
       if (active) {
         if (lockedWorkType) workTypeSelect.value = lockedWorkType;
         workTypeSelect.disabled = true;
+        setAttendanceUI("timedIn");
       } else {
         workTypeSelect.disabled = false;
+
+        if (workTypeSelect.value) {
+          setAttendanceUI("ready");
+        } else {
+          setAttendanceUI("initial");
+        }
       }
     }
 
@@ -404,11 +474,8 @@
       return Math.sqrt(sum);
     }
 
-    async function verifyFace(uid) {
-      const snap = await getDoc(doc(db, "users", uid));
-      const saved = snap.exists() ? snap.data().faceDescriptor : null;
-
-      if (!saved || !Array.isArray(saved) || saved.length !== 128) {
+    async function verifyFace() {
+      if (!savedFaceDescriptor || !Array.isArray(savedFaceDescriptor) || savedFaceDescriptor.length !== 128) {
         statusEl.textContent = "No registered face. Redirecting to setup...";
         window.location.href = "setup-face.html";
         return false;
@@ -416,40 +483,67 @@
 
       const current = await getDescriptorFromVideo();
       if (!current) {
-        statusEl.textContent = "No face detected. Center your face + add light.";
+        statusEl.textContent = "No face detected. Center your face and add more light.";
         return false;
       }
 
-      const dist = euclideanDistance(saved, current);
-      statusEl.textContent = `Face detected. Match distance: ${dist.toFixed(3)}`;
-
+      const dist = euclideanDistance(savedFaceDescriptor, current);
       const THRESHOLD = 0.65;
-      return dist < THRESHOLD;
+
+      if (dist < THRESHOLD) {
+        statusEl.textContent = `Face detected. Match distance: ${dist.toFixed(3)}`;
+        return true;
+      }
+
+      statusEl.textContent = `Face detected but not matched well enough (${dist.toFixed(3)}).`;
+      return false;
     }
 
     async function startCamera() {
+      stopCamera();
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
         audio: false
       });
 
       cameraStream = stream;
       video.srcObject = stream;
+      video.style.transform = "scaleX(-1)";
       video.style.display = "block";
+      cameraLabel.style.display = "block";
 
       await new Promise((resolve) => {
-        if (video.videoWidth) return resolve();
-        video.onloadedmetadata = () => resolve();
+        video.onloadedmetadata = () => {
+          video.play().then(resolve).catch(resolve);
+        };
       });
     }
 
     function stopCamera() {
       if (cameraStream) {
-        cameraStream.getTracks().forEach(t => t.stop());
-        cameraStream = null;
+        cameraStream.getTracks().forEach(track => track.stop());
       }
-      video.srcObject = null;
+
+      cameraStream = null;
+
+      if (video.srcObject) {
+        video.srcObject = null;
+      }
+
+      try {
+        video.pause();
+      } catch (_) {}
+
+      video.removeAttribute("src");
+      video.load();
+
       video.style.display = "none";
+      cameraLabel.style.display = "none";
     }
 
     function captureImageBase64() {
@@ -465,7 +559,13 @@
       canvas.height = targetH;
 
       const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, targetW, targetH);
+
+      ctx.save();
+      ctx.translate(targetW, 0);
+      ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, targetW, targetH);
+      ctx.restore();
 
       const ts = new Date().toLocaleString();
       ctx.font = "16px Arial";
@@ -475,7 +575,7 @@
       const textW = ctx.measureText(ts).width;
 
       ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(targetW - textW - padding*2, targetH - 26 - padding, textW + padding*2, 26 + padding);
+      ctx.fillRect(targetW - textW - padding * 2, targetH - 26 - padding, textW + padding * 2, 26 + padding);
 
       ctx.fillStyle = "white";
       ctx.fillText(ts, targetW - textW - padding, targetH - padding);
@@ -483,12 +583,50 @@
       return canvas.toDataURL("image/jpeg", 0.7);
     }
 
+    async function waitForFaceHold() {
+      verificationCancelled = false;
+      resetFaceHold();
+
+      while (!verificationCancelled) {
+        const ok = await verifyFace();
+
+        if (ok) {
+          if (!faceMatchStartTime) {
+            faceMatchStartTime = Date.now();
+          }
+
+          const heldMs = Date.now() - faceMatchStartTime;
+          const remainingMs = Math.max(0, REQUIRED_MATCH_MS - heldMs);
+          const remainingSec = (remainingMs / 1000).toFixed(1);
+
+          if (heldMs >= REQUIRED_MATCH_MS) {
+            resetFaceHold();
+            statusEl.textContent = "Face verified.";
+            return true;
+          }
+
+          statusEl.textContent = `Face recognized. Hold still for ${remainingSec}s...`;
+        } else {
+          resetFaceHold();
+        }
+
+        await sleep(FACE_CHECK_INTERVAL_MS);
+      }
+
+      resetFaceHold();
+      statusEl.textContent = "Verification stopped.";
+      return false;
+    }
+
     async function loadUserProfile(uid) {
       const snap = await getDoc(doc(db, "users", uid));
       if (!snap.exists()) throw new Error("User profile not found in Firestore.");
 
       const data = snap.data();
-      hasFace = Array.isArray(data.faceDescriptor) && data.faceDescriptor.length === 128;
+      savedFaceDescriptor = Array.isArray(data.faceDescriptor) && data.faceDescriptor.length === 128
+        ? data.faceDescriptor
+        : null;
+      hasFace = !!savedFaceDescriptor;
 
       uName.textContent = data.name ?? "-";
       uDept.textContent = data.department ?? "-";
@@ -527,7 +665,6 @@
       );
 
       const snap = await getDocs(q);
-
       const byDay = new Map();
 
       snap.forEach(docu => {
@@ -591,7 +728,6 @@
       });
     }
 
-    // ✅ TOTAL HOURS uses credited start time AND caps per-day to 10 hrs
     async function computeRenderedHours(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -712,7 +848,6 @@
       return { active, lastInTime, workType };
     }
 
-    // ✅ TODAY summary uses credited start time + caps to 10 hrs
     async function loadTodaySummary(uid) {
       const q = query(
         collection(db, "attendance"),
@@ -736,7 +871,9 @@
 
         if (a.type === "Time In" && !timeIn) {
           timeIn = dt;
-          creditedIn = (typeof a.creditedStartMs === "number") ? new Date(a.creditedStartMs) : creditedStartTime(dt);
+          creditedIn = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(dt);
           if (a.workType) workType = a.workType;
         }
         if (a.type === "Time Out") {
@@ -773,16 +910,16 @@
 
     function getWeekRangeMonSun() {
       const now = new Date();
-      const day = now.getDay(); // 0 Sunday
+      const day = now.getDay();
       const diffToMon = (day === 0 ? -6 : 1) - day;
 
       const mon = new Date(now);
       mon.setDate(now.getDate() + diffToMon);
-      mon.setHours(0,0,0,0);
+      mon.setHours(0, 0, 0, 0);
 
       const nextMon = new Date(mon);
       nextMon.setDate(mon.getDate() + 7);
-      nextMon.setHours(0,0,0,0);
+      nextMon.setHours(0, 0, 0, 0);
 
       return { mon, nextMon };
     }
@@ -859,7 +996,9 @@
         if (!a.userId || !a.timestamp) return;
         const dt = a.timestamp.toDate();
 
-        if (!state.has(a.userId)) state.set(a.userId, { active: false, workType: "-", lastInTime: null });
+        if (!state.has(a.userId)) {
+          state.set(a.userId, { active: false, workType: "-", lastInTime: null });
+        }
 
         const s = state.get(a.userId);
 
@@ -895,6 +1034,7 @@
           ul.appendChild(li);
           return;
         }
+
         arr.forEach(t => {
           const li = document.createElement("li");
           li.textContent = t;
@@ -930,6 +1070,22 @@
       await loadMonthlyDTR(currentUid);
     });
 
+    workTypeSelect.addEventListener("change", async () => {
+      if (workTypeSelect.disabled) return;
+
+      if (!workTypeSelect.value) {
+        resetAttendanceCameraUI("initial");
+        return;
+      }
+
+      const state = await getUserTodayState(currentUid);
+      if (state.active) {
+        setAttendanceUI("timedIn");
+      } else {
+        setAttendanceUI("ready");
+      }
+    });
+
     async function refreshAll() {
       if (!currentUid) return;
       await computeRenderedHours(currentUid);
@@ -937,24 +1093,25 @@
       await updateWorkTypeLock(currentUid);
       await loadTodaySummary(currentUid);
       await loadWeekHours(currentUid);
-
       await loadTodayTeamStatus();
       await updateReminderBanner();
     }
 
     function stopAutoTimeInLoop() {
-      if (autoScanInterval) clearInterval(autoScanInterval);
-      autoScanInterval = null;
-
-      btnStartAuto.disabled = false;
-      btnStopAuto.disabled = true;
-
-      stopCamera();
-      statusEl.textContent = "Auto Time In stopped. Camera off.";
+      verificationCancelled = true;
+      resetAttendanceCameraUI(
+        workTypeSelect.disabled ? "timedIn" : (workTypeSelect.value ? "ready" : "initial")
+      );
+      statusEl.textContent = "Verification stopped. Camera off.";
     }
 
     async function startAutoTimeInLoop() {
       if (!currentUid) return;
+
+      if (!workTypeSelect.value) {
+        alert("Please select work type first.");
+        return;
+      }
 
       if (!isAfter8AM(new Date())) {
         alert("Time In is allowed starting 8:00 AM onwards.");
@@ -962,135 +1119,142 @@
         return;
       }
 
-      btnStartAuto.disabled = true;
-      btnStopAuto.disabled = false;
-
-      statusEl.textContent = "Starting camera...";
-      await startCamera();
-
-      statusEl.textContent = "Loading face models...";
-      await loadFaceModelsOnce();
-
-      statusEl.textContent = "Auto Time In armed. Scanning...";
-
-      if (autoScanInterval) clearInterval(autoScanInterval);
-
-      autoScanInterval = setInterval(async () => {
-        if (isAutoTimingIn) return;
-
-        try {
-          isAutoTimingIn = true;
-
-          const slots = await getTodaySlots(currentUid);
-          if (slots.amIn || slots.pmIn) {
-            statusEl.textContent = "You are already timed in today.";
-            stopAutoTimeInLoop();
-            return;
-          }
-
-          const ok = await verifyFace(currentUid);
-          if (!ok) return;
-
-          const workTypeVal = document.getElementById("workType").value;
-          const confirmGo = confirm(`Time In now?\nWork Type: ${workTypeVal}`);
-          if (!confirmGo) {
-            statusEl.textContent = "Time In canceled.";
-            stopAutoTimeInLoop();
-            return;
-          }
-
-          const now = new Date();
-          const credited = creditedStartTime(now);
-
-          await addDoc(collection(db, "attendance"), {
-            userId: currentUid,
-            type: "Time In",
-            workType: workTypeVal,
-            imageBase64: captureImageBase64(),
-            timestamp: serverTimestamp(),
-            creditedStartMs: credited.getTime()
-          });
-
-          alert("Time In recorded!");
-          statusEl.textContent = "✅ Timed In successfully!";
-          await refreshAll();
-          stopAutoTimeInLoop();
-        } catch (e) {
-          console.error(e);
-          statusEl.textContent = "Auto Time In error. Check console.";
-        } finally {
-          isAutoTimingIn = false;
+      try {
+        const slots = await getTodaySlots(currentUid);
+        if (slots.amIn || slots.pmIn) {
+          statusEl.textContent = "You are already timed in today.";
+          await updateWorkTypeLock(currentUid);
+          return;
         }
-      }, 1200);
+
+        btnStartAuto.disabled = true;
+        btnStopAuto.disabled = false;
+        setAttendanceUI("scanning");
+
+        statusEl.textContent = "Starting camera...";
+        await startCamera();
+
+        statusEl.textContent = "Loading face models...";
+        await loadFaceModelsOnce();
+
+        statusEl.textContent = "Center your face and hold still for 5 seconds...";
+        const verified = await waitForFaceHold();
+
+        if (!verified) {
+          resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
+          return;
+        }
+
+        const workTypeVal = workTypeSelect.value;
+        const confirmGo = confirm(`Time In now?\nWork Type: ${workTypeVal}`);
+        if (!confirmGo) {
+          statusEl.textContent = "Time In canceled.";
+          resetAttendanceCameraUI("ready");
+          return;
+        }
+
+        const now = new Date();
+        const credited = creditedStartTime(now);
+
+        await addDoc(collection(db, "attendance"), {
+          userId: currentUid,
+          type: "Time In",
+          workType: workTypeVal,
+          imageBase64: captureImageBase64(),
+          timestamp: serverTimestamp(),
+          creditedStartMs: credited.getTime()
+        });
+
+        alert("Time In recorded!");
+        await refreshAll();
+
+        workTypeSelect.disabled = true;
+        resetAttendanceCameraUI("timedIn");
+        statusEl.textContent = "✅ Timed In successfully!";
+
+      } catch (e) {
+        console.error(e);
+        statusEl.textContent = "Auto Time In error. Check console.";
+        resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
+      }
     }
 
     btnStartAuto.addEventListener("click", async () => {
-      try {
-        await startAutoTimeInLoop();
-      } catch (e) {
-        console.error(e);
-        btnStartAuto.disabled = false;
-        btnStopAuto.disabled = true;
-      }
+      await startAutoTimeInLoop();
     });
 
-    btnStopAuto.addEventListener("click", () => stopAutoTimeInLoop());
+    btnStopAuto.addEventListener("click", () => {
+      stopAutoTimeInLoop();
+    });
 
     async function saveAttendance(type) {
-      if (!cameraStream) {
-        statusEl.textContent = "Starting camera for Time Out...";
-        await startCamera();
-        await loadFaceModelsOnce();
-      }
-
-      const ok = await verifyFace(currentUid);
-      if (!ok) {
-        alert("Face not matched. Attendance blocked.");
-        return;
-      }
-
-      const now = new Date();
-      const workType = document.getElementById("workType").value;
-
       if (!currentUid) {
         alert("Not logged in.");
         window.location.href = "index.html";
         return;
       }
 
-      if (type === "Time In" && !isAfter8AM(now)) {
-        alert("Time In is allowed starting 8:00 AM onwards.");
-        statusEl.textContent = "Blocked: Too early to Time In.";
-        return;
-      }
+      const now = new Date();
+      const workType = workTypeSelect.value;
 
-      statusEl.textContent = "Recording " + type + "...";
-
-      const slots = await getTodaySlots(currentUid);
-      const nowSlot = slotKey(type, now);
-
-      if (type === "Time Out" && !(slots.amIn || slots.pmIn)) {
-        alert("You cannot Time Out without Time In today.");
-        statusEl.textContent = "Blocked: No Time In today.";
-        return;
-      }
-
-      if (nowSlot && slots[nowSlot]) {
-        alert("Duplicate: You already recorded this AM/PM slot today.");
-        statusEl.textContent = "Blocked: Duplicate.";
-        return;
-      }
-
-      let imageBase64;
-      try {
-        imageBase64 = captureImageBase64();
-      } catch (e) {
-        alert(e.message);
-        statusEl.textContent = "Camera not ready.";
+      if (!workType) {
+        alert("Please select work type first.");
         return;
       }
 
       try {
+        const slots = await getTodaySlots(currentUid);
+        const nowSlot = slotKey(type, now);
+
+        if (type === "Time In" && !isAfter8AM(now)) {
+          alert("Time In is allowed starting 8:00 AM onwards.");
+          statusEl.textContent = "Blocked: Too early to Time In.";
+          resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
+          return;
+        }
+
+        if (type === "Time Out" && !(slots.amIn || slots.pmIn)) {
+          alert("You cannot Time Out without Time In today.");
+          statusEl.textContent = "Blocked: No Time In today.";
+          resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
+          return;
+        }
+
+        if (nowSlot && slots[nowSlot]) {
+          alert("Duplicate: You already recorded this AM/PM slot today.");
+          statusEl.textContent = "Blocked: Duplicate.";
+          resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : "ready");
+          return;
+        }
+
+        btnStartAuto.disabled = true;
+        btnStopAuto.disabled = false;
+        setAttendanceUI("scanning");
+
+        if (!cameraStream) {
+          statusEl.textContent = `Starting camera for ${type}...`;
+          await startCamera();
+          await loadFaceModelsOnce();
+        }
+
+        statusEl.textContent = `Center your face and hold still for 5 seconds to ${type.toLowerCase()}...`;
+        const verified = await waitForFaceHold();
+
+        if (!verified) {
+          resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : (workTypeSelect.value ? "ready" : "initial"));
+          return;
+        }
+
+        let imageBase64;
+        try {
+          imageBase64 = captureImageBase64();
+        } catch (e) {
+          alert(e.message);
+          statusEl.textContent = "Camera not ready.";
+          resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : "ready");
+          return;
+        }
+
         const payload = {
           userId: currentUid,
           type,
@@ -1107,19 +1271,28 @@
         await addDoc(collection(db, "attendance"), payload);
 
         alert(type + " recorded!");
-        statusEl.textContent = type + " saved. Updating...";
         await refreshAll();
-        statusEl.textContent = "Updated.";
 
-        stopCamera();
+        if (type === "Time In") {
+          workTypeSelect.disabled = true;
+          resetAttendanceCameraUI("timedIn");
+        } else {
+          workTypeSelect.disabled = false;
+          workTypeSelect.value = "";
+          resetAttendanceCameraUI("initial");
+        }
+
+        statusEl.textContent = "Updated.";
 
       } catch (e) {
         console.error(e);
         alert("Failed to save attendance. Check console.");
         statusEl.textContent = "Save failed.";
+        resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : (workTypeSelect.value ? "ready" : "initial"));
       }
     }
 
+    btnTimeOut.addEventListener("click", () => saveAttendance("Time Out"));
     window.timeOut = () => saveAttendance("Time Out");
 
     window.logout = async function () {
@@ -1128,7 +1301,7 @@
     };
 
     onAuthStateChanged(auth, async (user) => {
-      initTabs(); // ✅ tabs fix
+      initTabs();
 
       if (!user) {
         window.location.href = "index.html";
@@ -1147,12 +1320,23 @@
       await loadFaceModelsOnce();
       await refreshAll();
 
-      statusEl.textContent = "Ready. Click 'Start Auto Time In' to open camera.";
+      const todayState = await getUserTodayState(currentUid);
+      if (todayState.active) {
+        setAttendanceUI("timedIn");
+        statusEl.textContent = "Ready. You are currently timed in.";
+      } else if (workTypeSelect.value) {
+        setAttendanceUI("ready");
+        statusEl.textContent = "Ready. Click 'Start Auto Time In' to continue.";
+      } else {
+        setAttendanceUI("initial");
+        statusEl.textContent = "Ready. Please select your work type first.";
+      }
 
       setInterval(() => updateReminderBanner(), 60000);
     });
 
     window.addEventListener("beforeunload", () => {
+      verificationCancelled = true;
       if (autoScanInterval) clearInterval(autoScanInterval);
       stopCamera();
     });
