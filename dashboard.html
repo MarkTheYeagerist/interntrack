@@ -156,7 +156,11 @@
       </div>
 
       <button onclick="logout()" class="btn-secondary">Logout</button>
-      <p id="status" class="muted">Logged in.</p>
+
+      <div id="statusBox" class="status-box status-info">
+        <div id="statusTitle" class="status-title">System Status</div>
+        <div id="status" class="status-text">Logged in.</div>
+      </div>
     </div>
 
     <div class="panel">
@@ -214,7 +218,7 @@
       serverTimestamp
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-    function initTabs(){
+    function initTabs() {
       const btns = document.querySelectorAll(".tab-btn");
       const contents = document.querySelectorAll(".tab-content");
 
@@ -229,7 +233,10 @@
 
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
+
     const statusEl = document.getElementById("status");
+    const statusBox = document.getElementById("statusBox");
+    const statusTitle = document.getElementById("statusTitle");
 
     const uName = document.getElementById("uName");
     const uRole = document.getElementById("uRole");
@@ -284,7 +291,7 @@
     let verificationCancelled = false;
     let faceMatchStartTime = null;
 
-    const REQUIRED_MATCH_MS = 5000;
+    const REQUIRED_MATCH_MS = 3000;
     const FACE_CHECK_INTERVAL_MS = 250;
 
     function setAttendanceUI(mode) {
@@ -316,6 +323,23 @@
       if (mode === "timedIn" || mode === "locked") {
         btnTimeOut.style.display = "inline-block";
       }
+    }
+
+    function setStatus(message, tone = "info", title = "System Status") {
+      statusTitle.textContent = title;
+      statusEl.textContent = message;
+
+      statusBox.classList.remove(
+        "status-info",
+        "status-success",
+        "status-warning",
+        "status-danger"
+      );
+
+      if (tone === "success") statusBox.classList.add("status-success");
+      else if (tone === "warning") statusBox.classList.add("status-warning");
+      else if (tone === "danger") statusBox.classList.add("status-danger");
+      else statusBox.classList.add("status-info");
     }
 
     function resetFaceHold() {
@@ -452,7 +476,7 @@
 
     async function getDescriptorFromVideo() {
       const options = new faceapi.TinyFaceDetectorOptions({
-        inputSize: 416,
+        inputSize: 320,
         scoreThreshold: 0.5
       });
 
@@ -476,14 +500,14 @@
 
     async function verifyFace() {
       if (!savedFaceDescriptor || !Array.isArray(savedFaceDescriptor) || savedFaceDescriptor.length !== 128) {
-        statusEl.textContent = "No registered face. Redirecting to setup...";
+        setStatus("No registered face. Redirecting to setup...", "warning", "Face Setup Required");
         window.location.href = "setup-face.html";
         return false;
       }
 
       const current = await getDescriptorFromVideo();
       if (!current) {
-        statusEl.textContent = "No face detected. Center your face and add more light.";
+        setStatus("No face detected. Center your face and add more light.", "warning", "Face Not Detected");
         return false;
       }
 
@@ -491,11 +515,11 @@
       const THRESHOLD = 0.65;
 
       if (dist < THRESHOLD) {
-        statusEl.textContent = `Face detected. Match distance: ${dist.toFixed(3)}`;
+        setStatus(`Face detected. Match distance: ${dist.toFixed(3)}`, "success", "Face Matched");
         return true;
       }
 
-      statusEl.textContent = `Face detected but not matched well enough (${dist.toFixed(3)}).`;
+      setStatus(`Face detected but not matched well enough (${dist.toFixed(3)}).`, "warning", "Face Mismatch");
       return false;
     }
 
@@ -551,7 +575,7 @@
       const h = video.videoHeight;
       if (!w || !h) throw new Error("Camera not ready yet. Wait 1–2 seconds.");
 
-      const targetW = 640;
+      const targetW = 480;
       const scale = targetW / w;
       const targetH = Math.round(h * scale);
 
@@ -580,7 +604,7 @@
       ctx.fillStyle = "white";
       ctx.fillText(ts, targetW - textW - padding, targetH - padding);
 
-      return canvas.toDataURL("image/jpeg", 0.7);
+      return canvas.toDataURL("image/jpeg", 0.65);
     }
 
     async function waitForFaceHold() {
@@ -601,11 +625,11 @@
 
           if (heldMs >= REQUIRED_MATCH_MS) {
             resetFaceHold();
-            statusEl.textContent = "Face verified.";
+            setStatus("Face verified.", "success", "Verification Complete");
             return true;
           }
 
-          statusEl.textContent = `Face recognized. Hold still for ${remainingSec}s...`;
+          setStatus(`Face recognized. Hold still for ${remainingSec}s...`, "info", "Hold Still");
         } else {
           resetFaceHold();
         }
@@ -614,7 +638,7 @@
       }
 
       resetFaceHold();
-      statusEl.textContent = "Verification stopped.";
+      setStatus("Verification stopped.", "warning", "Verification Stopped");
       return false;
     }
 
@@ -876,6 +900,7 @@
             : creditedStartTime(dt);
           if (a.workType) workType = a.workType;
         }
+
         if (a.type === "Time Out") {
           timeOut = dt;
           if (a.workType) workType = a.workType;
@@ -1102,7 +1127,7 @@
       resetAttendanceCameraUI(
         workTypeSelect.disabled ? "timedIn" : (workTypeSelect.value ? "ready" : "initial")
       );
-      statusEl.textContent = "Verification stopped. Camera off.";
+      setStatus("Verification stopped. Camera off.", "warning", "Stopped");
     }
 
     async function startAutoTimeInLoop() {
@@ -1110,19 +1135,20 @@
 
       if (!workTypeSelect.value) {
         alert("Please select work type first.");
+        setStatus("Please select your work type first.", "warning", "Work Type Required");
         return;
       }
 
       if (!isAfter8AM(new Date())) {
         alert("Time In is allowed starting 8:00 AM onwards.");
-        statusEl.textContent = "Blocked: Too early to Time In.";
+        setStatus("Blocked: Too early to Time In.", "danger", "Time In Not Allowed");
         return;
       }
 
       try {
         const slots = await getTodaySlots(currentUid);
         if (slots.amIn || slots.pmIn) {
-          statusEl.textContent = "You are already timed in today.";
+          setStatus("You are already timed in today.", "warning", "Already Timed In");
           await updateWorkTypeLock(currentUid);
           return;
         }
@@ -1131,13 +1157,13 @@
         btnStopAuto.disabled = false;
         setAttendanceUI("scanning");
 
-        statusEl.textContent = "Starting camera...";
+        setStatus("Starting camera...", "info", "Camera");
         await startCamera();
 
-        statusEl.textContent = "Loading face models...";
+        setStatus("Loading face models...", "info", "Preparing Recognition");
         await loadFaceModelsOnce();
 
-        statusEl.textContent = "Center your face and hold still for 5 seconds...";
+        setStatus("Center your face and hold still for 3 seconds...", "info", "Ready to Time In");
         const verified = await waitForFaceHold();
 
         if (!verified) {
@@ -1148,7 +1174,7 @@
         const workTypeVal = workTypeSelect.value;
         const confirmGo = confirm(`Time In now?\nWork Type: ${workTypeVal}`);
         if (!confirmGo) {
-          statusEl.textContent = "Time In canceled.";
+          setStatus("Time In canceled.", "warning", "Canceled");
           resetAttendanceCameraUI("ready");
           return;
         }
@@ -1170,11 +1196,11 @@
 
         workTypeSelect.disabled = true;
         resetAttendanceCameraUI("timedIn");
-        statusEl.textContent = "✅ Timed In successfully!";
+        setStatus("✅ Timed In successfully!", "success", "Time In Complete");
 
       } catch (e) {
         console.error(e);
-        statusEl.textContent = "Auto Time In error. Check console.";
+        setStatus("Auto Time In error. Check console.", "danger", "Time In Error");
         resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
       }
     }
@@ -1199,6 +1225,7 @@
 
       if (!workType) {
         alert("Please select work type first.");
+        setStatus("Please select your work type first.", "warning", "Work Type Required");
         return;
       }
 
@@ -1208,21 +1235,21 @@
 
         if (type === "Time In" && !isAfter8AM(now)) {
           alert("Time In is allowed starting 8:00 AM onwards.");
-          statusEl.textContent = "Blocked: Too early to Time In.";
+          setStatus("Blocked: Too early to Time In.", "danger", "Time In Not Allowed");
           resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
           return;
         }
 
         if (type === "Time Out" && !(slots.amIn || slots.pmIn)) {
           alert("You cannot Time Out without Time In today.");
-          statusEl.textContent = "Blocked: No Time In today.";
+          setStatus("Blocked: No Time In today.", "danger", "Time Out Blocked");
           resetAttendanceCameraUI(workTypeSelect.value ? "ready" : "initial");
           return;
         }
 
         if (nowSlot && slots[nowSlot]) {
           alert("Duplicate: You already recorded this AM/PM slot today.");
-          statusEl.textContent = "Blocked: Duplicate.";
+          setStatus("Blocked: Duplicate.", "warning", "Duplicate Attendance");
           resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : "ready");
           return;
         }
@@ -1232,12 +1259,12 @@
         setAttendanceUI("scanning");
 
         if (!cameraStream) {
-          statusEl.textContent = `Starting camera for ${type}...`;
+          setStatus(`Starting camera for ${type}...`, "info", "Camera");
           await startCamera();
           await loadFaceModelsOnce();
         }
 
-        statusEl.textContent = `Center your face and hold still for 5 seconds to ${type.toLowerCase()}...`;
+        setStatus(`Center your face and hold still for 3 seconds to ${type.toLowerCase()}...`, "info", `Ready to ${type}`);
         const verified = await waitForFaceHold();
 
         if (!verified) {
@@ -1250,7 +1277,7 @@
           imageBase64 = captureImageBase64();
         } catch (e) {
           alert(e.message);
-          statusEl.textContent = "Camera not ready.";
+          setStatus("Camera not ready.", "warning", "Camera");
           resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : "ready");
           return;
         }
@@ -1282,12 +1309,12 @@
           resetAttendanceCameraUI("initial");
         }
 
-        statusEl.textContent = "Updated.";
+        setStatus(`${type} recorded successfully.`, "success", "Attendance Updated");
 
       } catch (e) {
         console.error(e);
         alert("Failed to save attendance. Check console.");
-        statusEl.textContent = "Save failed.";
+        setStatus("Failed to save attendance. Check console.", "danger", "Save Failed");
         resetAttendanceCameraUI(type === "Time Out" ? "timedIn" : (workTypeSelect.value ? "ready" : "initial"));
       }
     }
@@ -1323,13 +1350,13 @@
       const todayState = await getUserTodayState(currentUid);
       if (todayState.active) {
         setAttendanceUI("timedIn");
-        statusEl.textContent = "Ready. You are currently timed in.";
+        setStatus("You are currently timed in. Use Time Out when your shift ends.", "warning", "Already Timed In");
       } else if (workTypeSelect.value) {
         setAttendanceUI("ready");
-        statusEl.textContent = "Ready. Click 'Start Auto Time In' to continue.";
+        setStatus("Click 'Start Auto Time In' to continue.", "info", "Ready");
       } else {
         setAttendanceUI("initial");
-        statusEl.textContent = "Ready. Please select your work type first.";
+        setStatus("Please select your work type first.", "info", "Ready");
       }
 
       setInterval(() => updateReminderBanner(), 60000);

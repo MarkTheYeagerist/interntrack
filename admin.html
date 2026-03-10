@@ -29,7 +29,7 @@
       <div class="card">
         <h3 style="margin:0;">Weekly Export (ZIP)</h3>
         <div class="muted" style="margin-top:6px;">
-          Exports: XLSX + /images folder (full images). Then you can remove images to save Firestore storage.
+          Export XLSX + images folder for the selected week, then remove the images for that same selected week after backup.
         </div>
 
         <div class="export-row">
@@ -38,10 +38,13 @@
             <input type="date" id="weekDate" />
           </div>
 
+          <button id="btnThisWeek" class="btn-secondary" style="width:auto;">Use This Week</button>
+          <button id="btnLastWeek" class="btn-secondary" style="width:auto;">Use Last Week</button>
           <button id="btnExportZip" class="btn-secondary" style="width:auto;">Download ZIP</button>
-          <button id="btnRemoveImages" class="btn-secondary" style="width:auto;" disabled>Remove Images (This Week)</button>
+          <button id="btnRemoveImages" class="btn-secondary" style="width:auto;" disabled>Remove Images (Selected Week)</button>
         </div>
 
+        <p class="muted" id="weekRangeLabel" style="margin-top:8px;"></p>
         <p class="muted" id="exportStatus" style="margin-top:8px;"></p>
       </div>
 
@@ -164,6 +167,8 @@
       deleteField, writeBatch
     } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+    const APP_NAME = "InternTrack";
+
     const adminStatus = document.getElementById("adminStatus");
 
     const internBody = document.getElementById("internBody");
@@ -177,9 +182,12 @@
     const btnRefreshPending = document.getElementById("btnRefreshPending");
 
     const weekDate = document.getElementById("weekDate");
+    const btnThisWeek = document.getElementById("btnThisWeek");
+    const btnLastWeek = document.getElementById("btnLastWeek");
     const btnExportZip = document.getElementById("btnExportZip");
     const btnRemoveImages = document.getElementById("btnRemoveImages");
     const exportStatus = document.getElementById("exportStatus");
+    const weekRangeLabel = document.getElementById("weekRangeLabel");
 
     const photoModal = document.getElementById("photoModal");
     const photoImg = document.getElementById("photoImg");
@@ -187,7 +195,6 @@
     const photoTitle = document.getElementById("photoTitle");
     const photoSubtitle = document.getElementById("photoSubtitle");
 
-    // ✅ custom date controls
     const customDateWrap = document.getElementById("customDateWrap");
     const customLogDate = document.getElementById("customLogDate");
     const logSubtitle = document.getElementById("logSubtitle");
@@ -200,10 +207,12 @@
       photoImg.src = img;
       photoModal.style.display = "block";
     }
+
     function closePhotoModal() {
       photoModal.style.display = "none";
       photoImg.src = "";
     }
+
     closePhotoBtn.addEventListener("click", closePhotoModal);
     photoModal.addEventListener("click", (e) => {
       if (e.target === photoModal) closePhotoModal();
@@ -212,15 +221,17 @@
     function fmtDate(d) {
       return d.toLocaleDateString([], { month: "short", day: "2-digit", year: "numeric" });
     }
+
     function fmtTime(d) {
       return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
 
     function startOfDay(d) {
       const x = new Date(d);
-      x.setHours(0,0,0,0);
+      x.setHours(0, 0, 0, 0);
       return x;
     }
+
     function startOfNextDay(d) {
       const x = startOfDay(d);
       x.setDate(x.getDate() + 1);
@@ -230,6 +241,7 @@
     function startOfToday() {
       return startOfDay(new Date());
     }
+
     function startOfTomorrow() {
       return startOfNextDay(new Date());
     }
@@ -265,6 +277,35 @@
       const mm = String(d.getMonth() + 1).padStart(2, "0");
       const dd = String(d.getDate()).padStart(2, "0");
       return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function setWeekPickerFromDate(dateObj) {
+      weekDate.value = ymd(dateObj);
+      updateWeekRangeLabel();
+      btnRemoveImages.disabled = true;
+      exportStatus.textContent = "";
+      lastWeekDocRefs = [];
+    }
+
+    function updateWeekRangeLabel() {
+      const range = getWorkWeekRangeFromDateInput(weekDate.value);
+      if (!range) {
+        weekRangeLabel.textContent = "";
+        return;
+      }
+
+      const { mon, fri } = range;
+      weekRangeLabel.textContent = `Selected week: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)`;
+    }
+
+    function setCurrentWeek() {
+      setWeekPickerFromDate(new Date());
+    }
+
+    function setLastWeek() {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setWeekPickerFromDate(d);
     }
 
     function dataUrlToUint8Array(dataUrl) {
@@ -410,7 +451,6 @@
 
       const now = new Date();
 
-      // figure date range filter
       let rangeStart = null;
       let rangeEnd = null;
 
@@ -447,7 +487,6 @@
         const dt = a.timestamp?.toDate();
         if (!dt) return;
 
-        // apply filter
         if (logFilter.value === "month") {
           if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return;
         } else if (rangeStart && rangeEnd) {
@@ -559,7 +598,7 @@
 
       const { mon, fri, sat } = range;
 
-      exportStatus.textContent = `Exporting week: ${ymd(mon)} to ${ymd(fri)} (Mon-Fri)...`;
+      exportStatus.textContent = `Exporting selected week: ${ymd(mon)} to ${ymd(fri)} (Mon-Fri)...`;
 
       const usersSnap = await getDocs(collection(db, "users"));
       const userMap = new Map();
@@ -573,7 +612,7 @@
       ));
 
       if (attSnap.empty) {
-        exportStatus.textContent = "No attendance records found for this week.";
+        exportStatus.textContent = "No attendance records found for the selected week.";
         return;
       }
 
@@ -630,10 +669,10 @@
 
       const xlsxArray = window.XLSX.write(wb, { bookType: "xlsx", type: "array" });
       const weekLabel = `${ymd(mon)}_to_${ymd(fri)}`;
-      zip.file(`InternTrack_Week_${weekLabel}.xlsx`, xlsxArray);
+      zip.file(`${APP_NAME}_Week_${weekLabel}.xlsx`, xlsxArray);
 
       const blob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(blob, `InternTrack_Week_${weekLabel}.zip`);
+      downloadBlob(blob, `${APP_NAME}_Week_${weekLabel}.zip`);
 
       exportStatus.textContent = `Downloaded ZIP ✅ (Rows: ${rows.length}, Images: ${imgCount})`;
 
@@ -650,11 +689,11 @@
       const { mon, fri, sat } = range;
 
       const ok = confirm(
-        `Remove images for: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)?\n\nThis keeps logs and only removes imageBase64.`
+        `Remove images for selected week: ${ymd(mon)} to ${ymd(fri)} (Mon–Fri)?\n\nThis keeps logs and only removes imageBase64.`
       );
       if (!ok) return;
 
-      exportStatus.textContent = "Finding docs with images for this week...";
+      exportStatus.textContent = "Finding docs with images for the selected week...";
 
       try {
         const snap = await getDocs(query(
@@ -671,7 +710,7 @@
         });
 
         if (refs.length === 0) {
-          exportStatus.textContent = "No images found to remove for this week.";
+          exportStatus.textContent = "No images found to remove for the selected week.";
           await loadLogs();
           return;
         }
@@ -688,6 +727,8 @@
         }
 
         exportStatus.textContent = `Images removed ✅ (${refs.length} docs updated). Refreshing...`;
+        btnRemoveImages.disabled = true;
+        lastWeekDocRefs = [];
         await loadLogs();
       } catch (err) {
         console.error(err);
@@ -700,7 +741,6 @@
       if (logFilter.value === "custom") {
         customDateWrap.style.display = "block";
         if (!customLogDate.value) {
-          // default to today
           const t = new Date();
           customLogDate.value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
         }
@@ -724,6 +764,15 @@
     customLogDate.addEventListener("change", loadLogs);
 
     btnRefreshPending.addEventListener("click", loadPendingToday);
+
+    btnThisWeek.addEventListener("click", setCurrentWeek);
+    btnLastWeek.addEventListener("click", setLastWeek);
+    weekDate.addEventListener("change", () => {
+      updateWeekRangeLabel();
+      btnRemoveImages.disabled = true;
+      exportStatus.textContent = "";
+      lastWeekDocRefs = [];
+    });
 
     btnExportZip.addEventListener("click", exportWeekZip);
     btnRemoveImages.addEventListener("click", removeWeekImages);
@@ -752,16 +801,15 @@
       await loadPendingToday();
       await loadInterns();
 
-      // default week date = today
       const today = new Date();
       const yyyy = today.getFullYear();
       const mm = String(today.getMonth()+1).padStart(2,"0");
       const dd = String(today.getDate()).padStart(2,"0");
-      weekDate.value = `${yyyy}-${mm}-${dd}`;
 
-      // default custom log date = today
+      weekDate.value = `${yyyy}-${mm}-${dd}`;
       customLogDate.value = `${yyyy}-${mm}-${dd}`;
 
+      updateWeekRangeLabel();
       syncCustomDateVisibility();
       await loadLogs();
     });

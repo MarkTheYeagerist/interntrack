@@ -590,3 +590,65 @@ video{
     left: 22px;
   }
 }
+
+.status-box{
+  margin-top: 14px;
+  border-radius: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+
+.status-title{
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.status-text{
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.status-info{
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.status-info .status-title,
+.status-info .status-text{
+  color: #1e293b;
+}
+
+.status-success{
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.status-success .status-title,
+.status-success .status-text{
+  color: #166534;
+}
+
+.status-warning{
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+.status-warning .status-title,
+.status-warning .status-text{
+  color: #c2410c;
+}
+
+.status-danger{
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.status-danger .status-title,
+.status-danger .status-text{
+  color: #b91c1c;
+}
