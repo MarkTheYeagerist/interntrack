@@ -12,7 +12,6 @@
     <div class="panel">
       <h2>Dashboard</h2>
 
-      <!-- In-app reminder banner -->
       <div id="reminderBanner" class="banner" style="display:none;">
         <div>
           <b>⚠️ Pending Time Out</b>
@@ -21,7 +20,6 @@
         <button id="reminderBtn" class="btn-secondary" style="width:auto;">Time Out Now</button>
       </div>
 
-      <!-- Profile Card -->
       <div class="card">
         <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
           <div><b>Name:</b> <span id="uName">-</span></div>
@@ -49,7 +47,6 @@
         </div>
       </div>
 
-      <!-- Summary Cards -->
       <div class="cards-4">
         <div class="stat">
           <div class="stat-label">Today Status</div>
@@ -78,12 +75,11 @@
         <button class="tab-btn" type="button" data-tab="team">Team</button>
       </div>
 
-      <!-- TODAY TAB -->
       <div id="tab-today" class="tab-content is-active">
         <div class="card">
           <h3 style="margin:0;">Today Snapshot</h3>
           <div class="muted" style="margin-top:6px;">
-            Tip: Daily credited hours are capped to <b>8 hrs regular + 2 hrs overtime</b> (max <b>10 hrs/day</b>).
+            Tip: Daily credited hours use the 15-minute round-up rule and are capped to <b>10 hrs/day</b>.
           </div>
 
           <div style="margin-top:10px;">
@@ -99,7 +95,6 @@
         </div>
       </div>
 
-      <!-- DTR TAB -->
       <div id="tab-dtr" class="tab-content">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
@@ -119,6 +114,7 @@
                   <th>ARRIVAL</th>
                   <th>DEPARTURE</th>
                   <th>WORK TYPE</th>
+                  <th>TOTAL HOURS</th>
                 </tr>
               </thead>
               <tbody id="dtrBody"></tbody>
@@ -127,7 +123,6 @@
         </div>
       </div>
 
-      <!-- TEAM TAB -->
       <div id="tab-team" class="tab-content">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
@@ -156,6 +151,8 @@
       </div>
 
       <button onclick="logout()" class="btn-secondary">Logout</button>
+      <button id="btnEnableNotifications" class="btn-secondary">Enable Notifications</button>
+      <button id="btnTestNotification" class="btn-secondary">Test Notification</button>
 
       <div id="statusBox" class="status-box status-info">
         <div id="statusTitle" class="status-title">System Status</div>
@@ -193,13 +190,13 @@
         </div>
 
         <p class="muted" style="margin-top:10px;">
-          Note: System prevents duplicate Time In/Out for the same AM/PM slot.
+          Note: If you do not time out before 12:00 AM, today’s attendance will be void.
         </p>
         <p class="muted">
           Rule: Time In allowed <b>8:00 AM onwards</b>. Hours credit starts at <b>9:00 AM</b>.
         </p>
         <p class="muted">
-          Rule: Daily credited hours are capped to <b>8 hrs regular + 2 hrs overtime</b> (max <b>10 hrs/day</b>).
+          Rule: Daily credited hours round up only when within <b>15 minutes</b> of the next hour, and are capped to <b>10 hrs/day</b>.
         </p>
       </div>
     </div>
@@ -279,6 +276,8 @@
     const reminderBanner = document.getElementById("reminderBanner");
     const reminderText = document.getElementById("reminderText");
     const reminderBtn = document.getElementById("reminderBtn");
+    const btnEnableNotifications = document.getElementById("btnEnableNotifications");
+    const btnTestNotification = document.getElementById("btnTestNotification");
 
     let cameraStream = null;
     let modelsLoaded = false;
@@ -290,6 +289,7 @@
     let autoScanInterval = null;
     let verificationCancelled = false;
     let faceMatchStartTime = null;
+    let swRegistration = null;
 
     const REQUIRED_MATCH_MS = 3000;
     const FACE_CHECK_INTERVAL_MS = 250;
@@ -383,9 +383,64 @@
       return d;
     }
 
-    function formatHours(ms) {
-      const hours = ms / (1000 * 60 * 60);
-      return (Math.floor(hours * 100) / 100).toFixed(2);
+    function dayKeyFromDate(dt) {
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const dd = String(dt.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function creditedStartTime(dt) {
+      const nine = new Date(dt);
+      nine.setHours(9, 0, 0, 0);
+      return dt < nine ? nine : dt;
+    }
+
+    function creditedHoursFromMs(ms) {
+      const maxMs = 10 * 60 * 60 * 1000;
+      const safeMs = Math.max(0, Math.min(ms, maxMs));
+      const rawHours = safeMs / (1000 * 60 * 60);
+
+      let whole = Math.floor(rawHours);
+      const minutes = (rawHours - whole) * 60;
+
+      if (minutes >= 45) whole += 1;
+
+      return Math.min(10, whole);
+    }
+
+    function formatCreditedHours(ms) {
+      return `${creditedHoursFromMs(ms)} hrs`;
+    }
+
+    function computeDayWorkedMs(attendanceDocsForDay, includeActiveNow = false) {
+      let lastIn = null;
+      let totalMs = 0;
+
+      for (const a of attendanceDocsForDay) {
+        if (!a.timestamp) continue;
+        const dt = a.timestamp.toDate();
+
+        if (a.type === "Time In") {
+          const credited = (typeof a.creditedStartMs === "number")
+            ? new Date(a.creditedStartMs)
+            : creditedStartTime(dt);
+          lastIn = credited;
+        } else if (a.type === "Time Out" && lastIn) {
+          const out = dt;
+          const diff = out - lastIn;
+          if (diff > 0) totalMs += diff;
+          lastIn = null;
+        }
+      }
+
+      if (includeActiveNow && lastIn) {
+        const now = new Date();
+        const diff = now - lastIn;
+        if (diff > 0) totalMs += diff;
+      }
+
+      return totalMs;
     }
 
     function isAM(dateObj) {
@@ -405,21 +460,225 @@
       return now >= cutoff;
     }
 
-    function isAfter530PM(now = new Date()) {
+    function isAfter9AM(now = new Date()) {
       const cutoff = new Date(now);
-      cutoff.setHours(17, 30, 0, 0);
+      cutoff.setHours(9, 0, 0, 0);
       return now >= cutoff;
     }
 
-    function creditedStartTime(dt) {
-      const nine = new Date(dt);
-      nine.setHours(9, 0, 0, 0);
-      return dt < nine ? nine : dt;
+    function getNotiKey(suffix) {
+      const today = dayKeyFromDate(new Date());
+      const uid = currentUid || "guest";
+      return `interntrack_${uid}_${today}_${suffix}`;
     }
 
-    function capDailyMs(ms) {
-      const max = 10 * 60 * 60 * 1000;
-      return Math.min(ms, max);
+    function wasNotificationSent(suffix) {
+      return localStorage.getItem(getNotiKey(suffix)) === "1";
+    }
+
+    function markNotificationSent(suffix) {
+      localStorage.setItem(getNotiKey(suffix), "1");
+    }
+
+    async function registerNotificationServiceWorker() {
+      if (!("serviceWorker" in navigator)) return null;
+
+      try {
+        if (swRegistration) return swRegistration;
+        await navigator.serviceWorker.register("/sw.js");
+        swRegistration = await navigator.serviceWorker.ready;
+        return swRegistration;
+      } catch (err) {
+        console.error("SW registration failed:", err);
+        return null;
+      }
+    }
+
+    async function requestNotificationPermission() {
+      if (!("Notification" in window)) {
+        alert("This browser does not support notifications.");
+        return false;
+      }
+
+      if (Notification.permission === "granted") {
+        await registerNotificationServiceWorker();
+        setStatus("Browser notifications are already enabled.", "success", "Notifications Enabled");
+        updateNotificationButton();
+        return true;
+      }
+
+      if (Notification.permission === "denied") {
+        setStatus("Browser notifications are blocked. Please allow them in browser settings.", "warning", "Notifications Blocked");
+        updateNotificationButton();
+        return false;
+      }
+
+      const permission = await Notification.requestPermission();
+
+      if (permission === "granted") {
+        await registerNotificationServiceWorker();
+        setStatus("Browser notifications enabled successfully.", "success", "Notifications Enabled");
+        updateNotificationButton();
+        return true;
+      }
+
+      setStatus("Notification permission was not granted.", "warning", "Notifications Not Enabled");
+      updateNotificationButton();
+      return false;
+    }
+
+    async function sendBrowserNotification(title, body) {
+      if (!("Notification" in window)) return false;
+      if (Notification.permission !== "granted") return false;
+
+      const reg = await registerNotificationServiceWorker();
+      if (!reg) return false;
+
+      try {
+        await reg.showNotification(title, {
+          body,
+          icon: "/favicon.ico",
+          badge: "/favicon.ico",
+          tag: "interntrack-reminder",
+          renotify: false
+        });
+        return true;
+      } catch (err) {
+        console.error("showNotification failed:", err);
+        return false;
+      }
+    }
+
+    function updateNotificationButton() {
+      if (!("Notification" in window)) {
+        btnEnableNotifications.textContent = "Notifications Not Supported";
+        btnEnableNotifications.disabled = true;
+        return;
+      }
+
+      if (Notification.permission === "granted") {
+        btnEnableNotifications.textContent = "Notifications Enabled";
+        btnEnableNotifications.disabled = true;
+      } else if (Notification.permission === "denied") {
+        btnEnableNotifications.textContent = "Notifications Blocked";
+        btnEnableNotifications.disabled = true;
+      } else {
+        btnEnableNotifications.textContent = "Enable Notifications";
+        btnEnableNotifications.disabled = false;
+      }
+    }
+
+    async function forceTestNotification() {
+      const ok = await requestNotificationPermission();
+      if (!ok) return;
+
+      const sent = await sendBrowserNotification(
+        "InternTrack Test",
+        "If you can see this, browser notifications are working."
+      );
+
+      if (sent) {
+        setStatus("Test notification sent.", "success", "Notification Test");
+      } else {
+        setStatus("Test notification failed.", "danger", "Notification Test");
+      }
+    }
+
+    async function getTodayAttendanceEntries(uid) {
+      const q = query(
+        collection(db, "attendance"),
+        where("userId", "==", uid),
+        where("timestamp", ">=", startOfToday()),
+        where("timestamp", "<", startOfTomorrow()),
+        orderBy("timestamp", "asc")
+      );
+
+      const snap = await getDocs(q);
+      const entries = [];
+
+      snap.forEach(docu => {
+        const a = docu.data();
+        if (!a.timestamp) return;
+        entries.push(a);
+      });
+
+      entries.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+      return entries;
+    }
+
+    function analyzeTodayEntries(entries) {
+      let active = false;
+      let workType = "-";
+      let firstTimeIn = null;
+      let hasTimeIn = false;
+      let hasTimeOut = false;
+
+      for (const a of entries) {
+        const dt = a.timestamp.toDate();
+
+        if (a.type === "Time In") {
+          active = true;
+          hasTimeIn = true;
+          workType = a.workType || workType;
+          if (!firstTimeIn) firstTimeIn = dt;
+        } else if (a.type === "Time Out") {
+          active = false;
+          hasTimeOut = true;
+          workType = a.workType || workType;
+        }
+      }
+
+      const workedMs = computeDayWorkedMs(entries, active);
+      const creditedHours = creditedHoursFromMs(workedMs);
+
+      return {
+        active,
+        workType,
+        firstTimeIn,
+        hasTimeIn,
+        hasTimeOut,
+        workedMs,
+        creditedHours
+      };
+    }
+
+    async function checkDailyNotifications() {
+      if (!currentUid) return;
+      if (Notification.permission !== "granted") return;
+
+      const now = new Date();
+      const entries = await getTodayAttendanceEntries(currentUid);
+      const info = analyzeTodayEntries(entries);
+
+      if (isAfter8AM(now) && !info.hasTimeIn && !wasNotificationSent("8am_allowed")) {
+        const sent = await sendBrowserNotification("InternTrack Reminder", "Time In is now allowed.");
+        if (sent) markNotificationSent("8am_allowed");
+      }
+
+      if (
+        info.active &&
+        info.firstTimeIn &&
+        info.firstTimeIn < creditedStartTime(info.firstTimeIn) &&
+        isAfter9AM(now) &&
+        !wasNotificationSent("9am_crediting_started")
+      ) {
+        const sent = await sendBrowserNotification("InternTrack Reminder", "Your credited time is now starting.");
+        if (sent) markNotificationSent("9am_crediting_started");
+      }
+
+      if (info.active && info.creditedHours >= 10 && !wasNotificationSent("10hrs")) {
+        const sent = await sendBrowserNotification(
+          "InternTrack Reminder",
+          "You already reached 10 hours. Time to time out."
+        );
+        if (sent) markNotificationSent("10hrs");
+      } else if (info.active && info.creditedHours >= 8 && !wasNotificationSent("8hrs")) {
+        const sent = await sendBrowserNotification(
+          "InternTrack Reminder",
+          "Time to time out. Ignore this if you are doing overtime."
+        );
+        if (sent) markNotificationSent("8hrs");
+      }
     }
 
     async function updateWorkTypeLock(uid) {
@@ -657,8 +916,8 @@
 
       const role = (data.role || "intern").toLowerCase();
       uRole.textContent = role.toUpperCase();
-      uRole.classList.remove("intern", "employee");
-      uRole.classList.add(role === "employee" ? "employee" : "intern");
+      uRole.classList.remove("intern", "employee", "admin");
+      uRole.classList.add(role);
 
       requiredHours = Number(data.requiredHours ?? 0);
       uRequired.textContent = requiredHours ? `${requiredHours} hrs` : "-";
@@ -690,28 +949,27 @@
 
       const snap = await getDocs(q);
       const byDay = new Map();
+      const todayKey = dayKeyFromDate(new Date());
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
 
         const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
 
-        const yyyy = dt.getFullYear();
-        const mm = String(dt.getMonth() + 1).padStart(2, "0");
-        const dd = String(dt.getDate()).padStart(2, "0");
-        const dayKey = `${yyyy}-${mm}-${dd}`;
-
-        if (!byDay.has(dayKey)) {
-          byDay.set(dayKey, {
-            dateObj: new Date(yyyy, dt.getMonth(), dt.getDate()),
+        if (!byDay.has(key)) {
+          byDay.set(key, {
+            dateObj: new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()),
             arrival: "",
             departure: "",
-            workType: ""
+            workType: "",
+            entries: []
           });
         }
 
-        const entry = byDay.get(dayKey);
+        const entry = byDay.get(key);
+        entry.entries.push(a);
 
         if (a.type === "Time In") {
           if (!entry.arrival) entry.arrival = formatTime(dt);
@@ -728,12 +986,18 @@
 
       if (rows.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="5" style="text-align:center;">No attendance records for this month yet.</td>`;
+        tr.innerHTML = `<td colspan="6" style="text-align:center;">No attendance records for this month yet.</td>`;
         dtrBody.appendChild(tr);
         return;
       }
 
       rows.forEach((r, index) => {
+        r.entries.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+
+        const rowKey = dayKeyFromDate(r.dateObj);
+        const workedMs = computeDayWorkedMs(r.entries, rowKey === todayKey);
+        const totalHours = `${creditedHoursFromMs(workedMs)} hrs`;
+
         const dateLabel = r.dateObj.toLocaleDateString("en-GB", {
           day: "2-digit",
           month: "short",
@@ -747,70 +1011,49 @@
           <td>${r.arrival || "-"}</td>
           <td>${r.departure || "-"}</td>
           <td>${r.workType || "-"}</td>
+          <td>${totalHours}</td>
         `;
         dtrBody.appendChild(tr);
       });
     }
 
     async function computeRenderedHours(uid) {
-      const q = query(
+      const snap = await getDocs(query(
         collection(db, "attendance"),
         where("userId", "==", uid),
         orderBy("timestamp", "asc")
-      );
+      ));
 
-      const snap = await getDocs(q);
-
-      let lastIn = null;
-      let lastDayKey = null;
-      let dayMs = 0;
-      let totalMs = 0;
-
-      const flushDay = () => {
-        if (dayMs > 0) totalMs += capDailyMs(dayMs);
-        dayMs = 0;
-      };
+      const byDay = new Map();
+      const todayKey = dayKeyFromDate(new Date());
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
-        if (a.type === "Time In") {
-          const inDt = a.timestamp.toDate();
-          const credited = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(inDt);
-
-          const dayKey = credited.toDateString();
-          if (lastDayKey && dayKey !== lastDayKey) flushDay();
-
-          lastDayKey = dayKey;
-          lastIn = credited;
-        } else if (a.type === "Time Out" && lastIn) {
-          const out = a.timestamp.toDate();
-          const diff = out - lastIn;
-          if (diff > 0) dayMs += diff;
-          lastIn = null;
-        }
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(a);
       });
 
-      flushDay();
+      let totalCredited = 0;
 
-      const hours = totalMs / (1000 * 60 * 60);
-      const rounded = Math.floor(hours * 100) / 100;
+      for (const [key, arr] of byDay.entries()) {
+        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+        const workedMs = computeDayWorkedMs(arr, key === todayKey);
+        totalCredited += creditedHoursFromMs(workedMs);
+      }
 
-      uRendered.textContent = `${rounded.toFixed(2)} hrs`;
+      uRendered.textContent = `${totalCredited} hrs`;
 
-      const remaining = Math.max(0, (requiredHours || 0) - rounded);
-      const remainingRounded = Math.floor(remaining * 100) / 100;
-
-      uRemaining.textContent = requiredHours ? `${remainingRounded.toFixed(2)} hrs` : "-";
+      const remaining = Math.max(0, (requiredHours || 0) - totalCredited);
+      uRemaining.textContent = requiredHours ? `${remaining} hrs` : "-";
 
       if (requiredHours) {
-        const daysNeeded = Math.ceil(remainingRounded / 8);
+        const daysNeeded = Math.ceil(remaining / 8);
         uDays.textContent = `${daysNeeded} day(s)`;
 
-        const pct = Math.max(0, Math.min(100, (rounded / requiredHours) * 100));
+        const pct = Math.max(0, Math.min(100, (totalCredited / requiredHours) * 100));
         progressPct.textContent = `${pct.toFixed(1)}%`;
         progressBar.style.width = `${pct}%`;
       } else {
@@ -873,39 +1116,8 @@
     }
 
     async function loadTodaySummary(uid) {
-      const q = query(
-        collection(db, "attendance"),
-        where("userId", "==", uid),
-        where("timestamp", ">=", startOfToday()),
-        where("timestamp", "<", startOfTomorrow()),
-        orderBy("timestamp", "asc")
-      );
-
-      const snap = await getDocs(q);
-
-      let timeIn = null;
-      let creditedIn = null;
-      let timeOut = null;
-      let workType = "-";
-
-      snap.forEach(docu => {
-        const a = docu.data();
-        if (!a.timestamp) return;
-        const dt = a.timestamp.toDate();
-
-        if (a.type === "Time In" && !timeIn) {
-          timeIn = dt;
-          creditedIn = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(dt);
-          if (a.workType) workType = a.workType;
-        }
-
-        if (a.type === "Time Out") {
-          timeOut = dt;
-          if (a.workType) workType = a.workType;
-        }
-      });
+      const entries = await getTodayAttendanceEntries(uid);
+      const info = analyzeTodayEntries(entries);
 
       const setAll = (s, h, w) => {
         todayStatusEl.textContent = s;
@@ -917,20 +1129,19 @@
         todayWorkType2.textContent = w;
       };
 
-      if (!timeIn) {
-        setAll("Not Timed In", "0.00 hrs", "-");
+      if (!info.hasTimeIn) {
+        setAll("Not Timed In", "0 hrs", "-");
         return;
       }
 
-      if (timeIn && !timeOut) {
-        setAll("Timed In (Incomplete)", "—", workType);
+      const credited = formatCreditedHours(info.workedMs);
+
+      if (info.hasTimeIn && !info.hasTimeOut) {
+        setAll("Timed In", credited, info.workType);
         return;
       }
 
-      const diff = timeOut - (creditedIn || timeIn);
-      const capped = capDailyMs(Math.max(0, diff));
-
-      setAll("Completed", `${formatHours(capped)} hrs`, workType);
+      setAll("Completed", credited, info.workType);
     }
 
     function getWeekRangeMonSun() {
@@ -961,42 +1172,27 @@
       );
 
       const snap = await getDocs(q);
-
-      let lastIn = null;
-      let lastDayKey = null;
-      let dayMs = 0;
-      let totalMs = 0;
-
-      const flushDay = () => {
-        if (dayMs > 0) totalMs += capDailyMs(dayMs);
-        dayMs = 0;
-      };
+      const byDay = new Map();
+      const todayKey = dayKeyFromDate(new Date());
 
       snap.forEach(docu => {
         const a = docu.data();
         if (!a.timestamp) return;
-
-        if (a.type === "Time In") {
-          const inDt = a.timestamp.toDate();
-          const credited = (typeof a.creditedStartMs === "number")
-            ? new Date(a.creditedStartMs)
-            : creditedStartTime(inDt);
-
-          const dayKey = credited.toDateString();
-          if (lastDayKey && dayKey !== lastDayKey) flushDay();
-
-          lastDayKey = dayKey;
-          lastIn = credited;
-        } else if (a.type === "Time Out" && lastIn) {
-          const out = a.timestamp.toDate();
-          const diff = out - lastIn;
-          if (diff > 0) dayMs += diff;
-          lastIn = null;
-        }
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(a);
       });
 
-      flushDay();
-      weekHoursEl.textContent = `${formatHours(totalMs)} hrs`;
+      let totalCredited = 0;
+
+      for (const [key, arr] of byDay.entries()) {
+        arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+        const workedMs = computeDayWorkedMs(arr, key === todayKey);
+        totalCredited += creditedHoursFromMs(workedMs);
+      }
+
+      weekHoursEl.textContent = `${totalCredited} hrs`;
     }
 
     async function loadTodayTeamStatus() {
@@ -1077,10 +1273,19 @@
     async function updateReminderBanner() {
       if (!currentUid) return;
 
-      const s = await getUserTodayState(currentUid);
+      const entries = await getTodayAttendanceEntries(currentUid);
+      const info = analyzeTodayEntries(entries);
 
-      if (s.active && isAfter530PM(new Date())) {
-        reminderText.textContent = `You are still timed in (${s.workType}). Please time out to avoid incomplete logs.`;
+      if (!info.active) {
+        reminderBanner.style.display = "none";
+        return;
+      }
+
+      if (info.creditedHours >= 10) {
+        reminderText.textContent = `You already reached 10 credited hours (${info.workType}). Time to time out.`;
+        reminderBanner.style.display = "flex";
+      } else if (info.creditedHours >= 8) {
+        reminderText.textContent = `You already reached ${info.creditedHours} credited hours (${info.workType}). Time to time out. Ignore this if you are doing overtime.`;
         reminderBanner.style.display = "flex";
       } else {
         reminderBanner.style.display = "none";
@@ -1089,6 +1294,12 @@
 
     reminderBtn.addEventListener("click", () => window.timeOut());
     btnRefreshTeam.addEventListener("click", loadTodayTeamStatus);
+
+    btnEnableNotifications.addEventListener("click", async () => {
+      await requestNotificationPermission();
+    });
+
+    btnTestNotification.addEventListener("click", forceTestNotification);
 
     btnReloadDTR.addEventListener("click", async () => {
       if (!currentUid) return;
@@ -1120,6 +1331,7 @@
       await loadWeekHours(currentUid);
       await loadTodayTeamStatus();
       await updateReminderBanner();
+      await checkDailyNotifications();
     }
 
     function stopAutoTimeInLoop() {
@@ -1190,6 +1402,20 @@
           timestamp: serverTimestamp(),
           creditedStartMs: credited.getTime()
         });
+
+        if (now < credited) {
+          await sendBrowserNotification(
+            "InternTrack Reminder",
+            "You are now timed in. Credited hours will start at 9:00 AM."
+          );
+          markNotificationSent("pre9_timedin");
+        } else {
+          await sendBrowserNotification(
+            "InternTrack Reminder",
+            "You are now timed in. Your hours are now crediting."
+          );
+          markNotificationSent("post9_timedin");
+        }
 
         alert("Time In recorded!");
         await refreshAll();
@@ -1297,6 +1523,24 @@
 
         await addDoc(collection(db, "attendance"), payload);
 
+        if (type === "Time In") {
+          const credited = creditedStartTime(now);
+
+          if (now < credited) {
+            await sendBrowserNotification(
+              "InternTrack Reminder",
+              "You are now timed in. Credited hours will start at 9:00 AM."
+            );
+            markNotificationSent("pre9_timedin");
+          } else {
+            await sendBrowserNotification(
+              "InternTrack Reminder",
+              "You are now timed in. Your hours are now crediting."
+            );
+            markNotificationSent("post9_timedin");
+          }
+        }
+
         alert(type + " recorded!");
         await refreshAll();
 
@@ -1344,6 +1588,9 @@
         return;
       }
 
+      await registerNotificationServiceWorker();
+      updateNotificationButton();
+
       await loadFaceModelsOnce();
       await refreshAll();
 
@@ -1359,7 +1606,18 @@
         setStatus("Please select your work type first.", "info", "Ready");
       }
 
-      setInterval(() => updateReminderBanner(), 60000);
+      setInterval(async () => {
+        await updateReminderBanner();
+        await checkDailyNotifications();
+      }, 60000);
+
+      setInterval(async () => {
+        await loadTodaySummary(currentUid);
+        await loadWeekHours(currentUid);
+        await computeRenderedHours(currentUid);
+        await updateReminderBanner();
+        await checkDailyNotifications();
+      }, 60000);
     });
 
     window.addEventListener("beforeunload", () => {

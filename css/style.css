@@ -39,7 +39,6 @@ body::before{
   font-size: 0.92rem;
 }
 
-/* inputs */
 input, select{
   width: 100%;
   padding: 11px 12px;
@@ -56,7 +55,6 @@ input:focus, select:focus{
   box-shadow: var(--focus);
 }
 
-/* buttons (default = red brand) */
 button{
   padding: 11px 12px;
   width: 100%;
@@ -85,7 +83,6 @@ button:disabled{
   box-shadow: none;
 }
 
-/* secondary buttons */
 .btn-secondary{
   background: #fff !important;
   color: var(--brand) !important;
@@ -98,7 +95,6 @@ button:disabled{
   border-color: rgba(225, 29, 46, .55) !important;
 }
 
-/* role badge */
 .badge-role{
   padding: 4px 10px;
   border-radius: 999px;
@@ -111,10 +107,6 @@ button:disabled{
 .badge-role.employee{ background:#16a34a; }
 .badge-role.intern{ background: var(--brand); }
 
-/* =================================
-   DASHBOARD LAYOUT
-   ================================= */
-
 .app{
   display:grid;
   gap: 16px;
@@ -123,7 +115,6 @@ button:disabled{
   width: min(1400px, 100%);
 }
 
-/* desktop column ratio (less empty space) */
 @media (min-width: 901px){
   .app{
     grid-template-columns: 1.35fr 0.85fr;
@@ -131,7 +122,6 @@ button:disabled{
   }
 }
 
-/* phones/tablets */
 @media (max-width: 900px){
   .app{
     grid-template-columns: 1fr;
@@ -152,7 +142,6 @@ button:disabled{
   .panel{ padding: 12px; }
 }
 
-/* panel titles */
 .panel > h2{
   margin: 0 0 12px;
   font-size: 18px;
@@ -173,7 +162,6 @@ button:disabled{
   .card{ padding: 12px; margin: 10px 0; }
 }
 
-/* banner */
 .banner{
   display:flex;
   justify-content:space-between;
@@ -186,7 +174,6 @@ button:disabled{
   margin: 12px 0;
 }
 
-/* summary cards */
 .cards-4{
   display:grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -220,7 +207,6 @@ button:disabled{
   font-weight: 950;
 }
 
-/* table */
 .dtr-table{
   width:100%;
   border-collapse: separate;
@@ -247,21 +233,18 @@ button:disabled{
   letter-spacing: .6px;
 }
 
-/* nicer scroll container */
 .card > div[style*="overflow:auto"]{
   border-radius: 14px;
   border: 1px solid var(--line);
   background:#fff;
 }
 
-/* video */
 video{
   border-radius: 14px !important;
   border: 1px solid var(--line);
   box-shadow: 0 12px 22px rgba(17,24,39,.08);
 }
 
-/* team lists */
 .team-grid{
   display:grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -282,7 +265,6 @@ video{
 .team-list li{ margin: 6px 0; }
 .team-empty{ color: var(--muted); font-style: italic; }
 
-/* compact 3-column info row */
 .kv-row{
   display: grid;
   grid-template-columns: repeat(3, minmax(0,1fr));
@@ -292,10 +274,6 @@ video{
 @media (max-width: 600px){
   .kv-row{ grid-template-columns: 1fr; }
 }
-
-/* =================================
-   DASHBOARD TABS (THIS FIXES MOBILE)
-   ================================= */
 
 .tabs{
   display:flex;
@@ -323,7 +301,6 @@ video{
   box-shadow: 0 10px 18px rgba(225,29,46,.16) !important;
 }
 
-/* THIS is the key */
 .tab-content{ display:none; }
 .tab-content.is-active{ display:block; }
 
@@ -335,10 +312,6 @@ video{
     padding: 10px 10px !important;
   }
 }
-
-/* =================================
-   PROGRESS (works on phone)
-   ================================= */
 
 .progress-wrap{ width:100%; }
 
@@ -358,10 +331,6 @@ video{
   background: linear-gradient(90deg, var(--brand), #ff4d4f);
   border-radius: 999px;
 }
-
-/* =================================
-   AUTH (LOGIN/REGISTER) LAYOUT
-   ================================= */
 
 .auth{
   min-height: 100vh;
@@ -534,7 +503,6 @@ video{
   font-size: 13px;
 }
 
-/* Old simple login/register container (ONLY for pages that still use .container) */
 .container{
   margin-top: 80px;
   background: var(--panel);

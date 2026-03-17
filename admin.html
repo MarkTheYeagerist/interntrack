@@ -12,7 +12,6 @@
       <h2>Admin Panel</h2>
       <p class="muted" id="adminStatus">Checking admin access...</p>
 
-      <!-- Pending Time-outs -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
           <div>
@@ -25,7 +24,6 @@
         <ul id="pendingAdminList" class="team-list" style="margin-top:10px;"></ul>
       </div>
 
-      <!-- Weekly Export + Remove Images -->
       <div class="card">
         <h3 style="margin:0;">Weekly Export (ZIP)</h3>
         <div class="muted" style="margin-top:6px;">
@@ -48,7 +46,6 @@
         <p class="muted" id="exportStatus" style="margin-top:8px;"></p>
       </div>
 
-      <!-- Interns table -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <h3 style="margin:0;">All Interns</h3>
@@ -73,23 +70,22 @@
         </div>
       </div>
 
-      <!-- Attendance logs -->
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
           <div>
             <h3 style="margin:0;">Attendance Logs</h3>
-            <div class="muted" style="margin-top:6px;" id="logSubtitle">Showing latest 100 logs.</div>
+            <div class="muted" style="margin-top:6px;" id="logSubtitle">Showing logs for today.</div>
           </div>
 
           <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
             <div>
               <label class="muted"><b>Filter</b></label>
               <select id="logFilter" style="min-width:220px;">
-                <option value="all">All</option>
-                <option value="today">Today</option>
+                <option value="today" selected>Today</option>
                 <option value="yesterday">Yesterday</option>
                 <option value="month">This Month</option>
                 <option value="custom">Custom Date</option>
+                <option value="all">All (latest 100)</option>
               </select>
             </div>
 
@@ -123,7 +119,6 @@
     </div>
   </div>
 
-  <!-- Photo Modal -->
   <div id="photoModal" style="
     display:none;
     position:fixed;
@@ -153,7 +148,6 @@
     </div>
   </div>
 
-  <!-- ZIP + XLSX libraries -->
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
@@ -327,9 +321,6 @@
       URL.revokeObjectURL(url);
     }
 
-    // ===== Same hours rules as dashboard =====
-    function r2(n) { return Math.floor(n * 100) / 100; }
-
     function creditedStartTime(dt) {
       const nine = new Date(dt);
       nine.setHours(9, 0, 0, 0);
@@ -343,7 +334,20 @@
       return `${yyyy}-${mm}-${dd}`;
     }
 
-    function computeCappedDayHours(attendanceDocsForDay) {
+    function creditedHoursFromMs(ms) {
+      const maxMs = 10 * 60 * 60 * 1000;
+      const safeMs = Math.max(0, Math.min(ms, maxMs));
+      const rawHours = safeMs / (1000 * 60 * 60);
+
+      let whole = Math.floor(rawHours);
+      const minutes = (rawHours - whole) * 60;
+
+      if (minutes >= 45) whole += 1;
+
+      return Math.min(10, whole);
+    }
+
+    function computeDayWorkedMs(attendanceDocsForDay, includeActiveNow = false) {
       let lastIn = null;
       let totalMs = 0;
 
@@ -364,12 +368,13 @@
         }
       }
 
-      const workedHrs = totalMs / (1000 * 60 * 60);
-      const regular = Math.min(8, workedHrs);
-      const overtime = Math.min(2, Math.max(0, workedHrs - 8));
-      const credited = Math.min(10, regular + overtime);
+      if (includeActiveNow && lastIn) {
+        const now = new Date();
+        const diff = now - lastIn;
+        if (diff > 0) totalMs += diff;
+      }
 
-      return { creditedHrs: r2(credited) };
+      return totalMs;
     }
 
     async function computeRendered(uid) {
@@ -380,6 +385,7 @@
       ));
 
       const byDay = new Map();
+      const todayKey = dayKeyFromDate(new Date());
 
       snap.forEach(docu => {
         const a = docu.data();
@@ -392,12 +398,13 @@
 
       let totalCredited = 0;
 
-      for (const arr of byDay.values()) {
+      for (const [key, arr] of byDay.entries()) {
         arr.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
-        totalCredited += computeCappedDayHours(arr).creditedHrs;
+        const workedMs = computeDayWorkedMs(arr, key === todayKey);
+        totalCredited += creditedHoursFromMs(workedMs);
       }
 
-      return r2(totalCredited);
+      return totalCredited;
     }
 
     async function loadInterns() {
@@ -424,11 +431,21 @@
           <td>${u.name ?? ""}</td>
           <td>${u.department ?? ""}</td>
           <td>${required} hrs</td>
-          <td>${rendered.toFixed(2)} hrs</td>
-          <td>${remaining.toFixed(2)} hrs</td>
+          <td>${rendered} hrs</td>
+          <td>${remaining} hrs</td>
         `;
         internBody.appendChild(tr);
       }
+    }
+
+    function getMonthStart() {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    function getNextMonthStart() {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
     }
 
     async function loadLogs() {
@@ -438,31 +455,32 @@
       const userMap = new Map();
       usersSnap.forEach(d => userMap.set(d.id, d.data()));
 
-      const logsSnap = await getDocs(query(
-        collection(db, "attendance"),
-        orderBy("timestamp", "desc"),
-        limit(100)
-      ));
-
-      if (logsSnap.empty) {
-        logsBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No attendance yet.</td></tr>`;
-        return;
-      }
-
       const now = new Date();
-
+      let logsQuery;
       let rangeStart = null;
       let rangeEnd = null;
 
       if (logFilter.value === "today") {
         rangeStart = startOfToday();
         rangeEnd = startOfTomorrow();
+        logsQuery = query(
+          collection(db, "attendance"),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", rangeEnd),
+          orderBy("timestamp", "desc")
+        );
         logSubtitle.textContent = `Showing logs for today (${ymd(rangeStart)}).`;
       } else if (logFilter.value === "yesterday") {
         const y = new Date();
         y.setDate(y.getDate() - 1);
         rangeStart = startOfDay(y);
         rangeEnd = startOfNextDay(y);
+        logsQuery = query(
+          collection(db, "attendance"),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", rangeEnd),
+          orderBy("timestamp", "desc")
+        );
         logSubtitle.textContent = `Showing logs for yesterday (${ymd(rangeStart)}).`;
       } else if (logFilter.value === "custom") {
         if (!customLogDate.value) {
@@ -470,14 +488,43 @@
           logSubtitle.textContent = "Custom date selected. Please pick a date.";
           return;
         }
+
         const picked = new Date(customLogDate.value + "T00:00:00");
         rangeStart = startOfDay(picked);
         rangeEnd = startOfNextDay(picked);
+
+        logsQuery = query(
+          collection(db, "attendance"),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", rangeEnd),
+          orderBy("timestamp", "desc")
+        );
         logSubtitle.textContent = `Showing logs for ${ymd(rangeStart)}.`;
       } else if (logFilter.value === "month") {
-        logSubtitle.textContent = "Showing logs for this month (latest 100 only).";
+        const monthStart = getMonthStart();
+        const nextMonthStart = getNextMonthStart();
+
+        logsQuery = query(
+          collection(db, "attendance"),
+          where("timestamp", ">=", monthStart),
+          where("timestamp", "<", nextMonthStart),
+          orderBy("timestamp", "desc")
+        );
+        logSubtitle.textContent = `Showing logs for this month (${monthStart.toLocaleDateString([], { month: "long", year: "numeric" })}).`;
       } else {
+        logsQuery = query(
+          collection(db, "attendance"),
+          orderBy("timestamp", "desc"),
+          limit(100)
+        );
         logSubtitle.textContent = "Showing latest 100 logs.";
+      }
+
+      const logsSnap = await getDocs(logsQuery);
+
+      if (logsSnap.empty) {
+        logsBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No attendance found for this filter.</td></tr>`;
+        return;
       }
 
       let shown = 0;
@@ -486,12 +533,6 @@
         const a = docu.data();
         const dt = a.timestamp?.toDate();
         if (!dt) return;
-
-        if (logFilter.value === "month") {
-          if (dt.getMonth() !== now.getMonth() || dt.getFullYear() !== now.getFullYear()) return;
-        } else if (rangeStart && rangeEnd) {
-          if (!(dt >= rangeStart && dt < rangeEnd)) return;
-        }
 
         const u = userMap.get(a.userId) || {};
         const hasImg = !!a.imageBase64;
@@ -811,6 +852,8 @@
 
       updateWeekRangeLabel();
       syncCustomDateVisibility();
+
+      logFilter.value = "today";
       await loadLogs();
     });
   </script>
