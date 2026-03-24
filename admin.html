@@ -171,7 +171,6 @@
         </div>
       </div>
 
-      <button class="btn-secondary" onclick="goDashboard()">Back to Dashboard</button>
       <button class="btn-secondary" onclick="logout()">Logout</button>
     </div>
   </div>
@@ -1164,8 +1163,6 @@
     selectedInternCustomDate.addEventListener("change", loadSelectedInternWholeDtr);
     selectedIntern.addEventListener("change", loadSelectedInternWholeDtr);
     btnLoadSelectedInternDtr.addEventListener("click", loadSelectedInternWholeDtr);
-
-    window.goDashboard = () => window.location.href = "dashboard.html";
 
     window.logout = async function () {
       await signOut(auth);
