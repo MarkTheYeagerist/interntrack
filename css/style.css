@@ -620,3 +620,26 @@ video{
 .status-danger .status-text{
   color: #b91c1c;
 }
+
+.dtr-row-absent td{
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.dtr-row-pending td{
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.dtr-row-clickable{
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.dtr-row-clickable:hover td{
+  background: #f9fafb;
+}
+
+.dtr-row-selected td{
+  background: #fff1f2;
+}
