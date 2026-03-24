@@ -21,16 +21,16 @@
       <div class="auth-card">
         <div class="auth-head">
           <h2>Login InternTrack Account</h2>
-          <p class="muted">Enter your Company Account and Password</p>
+          <p class="muted">Enter your Username and Password</p>
         </div>
 
         <div class="auth-note">
-          Use your <b>Company Account</b> and <b>Password</b> to continue.
+          Use your <b>Username</b> and <b>Password</b> to continue.
         </div>
 
         <div class="auth-form">
-          <label class="auth-label">Company Account</label>
-          <input type="email" id="email" placeholder="pluk.yourname@gmail.com" required>
+          <label class="auth-label">Username</label>
+          <input type="text" id="email" placeholder="pluk.yourname@gmail.com or Admin" required>
 
           <label class="auth-label" style="margin-top:10px;">Password</label>
           <input type="password" id="password" placeholder="Password" required>
@@ -47,8 +47,7 @@
           </div>
 
           <div class="auth-actions">
-            <button onclick="loginIntern()">Login as Intern</button>
-            <button class="btn-danger" onclick="loginAdmin()">Login as Admin</button>
+            <button onclick="loginUser()">Login</button>
           </div>
 
           <div class="auth-bottom">
@@ -75,20 +74,28 @@
 
     const statusEl = document.getElementById("status");
 
-    window.loginIntern = async function () {
-      await loginUser("intern");
-    };
+    const ADMIN_USERNAME = "admin";
+    const ADMIN_EMAIL = "admin@interntrack.com";
 
-    window.loginAdmin = async function () {
-      await loginUser("admin");
-    };
-
-    function getEmailInput() {
-      return document.getElementById("email").value.trim().toLowerCase();
+    function getUsernameInput() {
+      return document.getElementById("email").value.trim();
     }
 
     function getPasswordInput() {
       return document.getElementById("password").value;
+    }
+
+    function isAdminUsername(username) {
+      return username.toLowerCase() === ADMIN_USERNAME;
+    }
+
+    function isInternUsername(username) {
+      return username.toLowerCase().includes("pluk");
+    }
+
+    function convertUsernameToEmail(username) {
+      if (isAdminUsername(username)) return ADMIN_EMAIL;
+      return username.trim().toLowerCase();
     }
 
     window.togglePassword = function () {
@@ -97,31 +104,51 @@
       pass.type = cb.checked ? "text" : "password";
     };
 
-    function enforcePluk(email) {
-      if (!email.startsWith("pluk.")) {
-        alert("Company account must start with 'pluk.'\nExample: pluk.marklawrencebautista@gmail.com");
+    function validateLoginInput(username) {
+      if (isAdminUsername(username)) return true;
+
+      if (!isInternUsername(username)) {
+        alert("Intern username must contain 'pluk'.\nExample: pluk.marklawrencebautista@gmail.com\n\nFor admin, use Username: Admin");
         return false;
       }
+
       return true;
     }
 
-    async function loginUser(expectedRole) {
-      const email = getEmailInput();
+    window.loginUser = async function () {
+      const username = getUsernameInput();
       const password = getPasswordInput();
 
       statusEl.textContent = "";
 
-      if (!email || !password) {
+      if (!username || !password) {
         alert("Please fill all fields.");
         return;
       }
 
-      if (!enforcePluk(email)) return;
+      if (!validateLoginInput(username)) return;
+
+      const emailToLogin = convertUsernameToEmail(username);
 
       try {
         statusEl.textContent = "Signing in...";
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, emailToLogin, password);
         const user = userCredential.user;
+
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const role = snap.exists() ? snap.data().role : null;
+
+        if (isAdminUsername(username)) {
+          if (role !== "admin") {
+            alert("Access denied. This account is not registered as admin.");
+            await signOut(auth);
+            statusEl.textContent = "Access denied.";
+            return;
+          }
+
+          window.location.href = "admin.html";
+          return;
+        }
 
         if (!user.emailVerified) {
           alert("Please verify your email before logging in.\nYou can click 'Resend Verification'.");
@@ -130,41 +157,35 @@
           return;
         }
 
-        const snap = await getDoc(doc(db, "users", user.uid));
-        const role = snap.exists() ? snap.data().role : null;
-
-        if (expectedRole === "admin") {
-          if (role !== "admin") {
-            alert("Access denied. Not an admin account.");
-            await signOut(auth);
-            statusEl.textContent = "Access denied.";
-            return;
-          }
-          window.location.href = "admin.html";
-        } else {
-          window.location.href = "dashboard.html";
-        }
+        window.location.href = "dashboard.html";
 
       } catch (error) {
         alert(error.message);
         statusEl.textContent = "Login failed.";
       }
-    }
+    };
 
     window.forgotPassword = async function () {
-      const email = getEmailInput();
+      const username = getUsernameInput();
       statusEl.textContent = "";
 
-      if (!email) {
-        alert("Please enter your Company Account email first.");
+      if (!username) {
+        alert("Please enter your username first.");
         return;
       }
 
-      if (!enforcePluk(email)) return;
+      if (isAdminUsername(username)) {
+        alert("Password reset is not available using the Admin username field.\nUse the real admin email in Firebase if needed.");
+        return;
+      }
+
+      if (!validateLoginInput(username)) return;
+
+      const email = convertUsernameToEmail(username);
 
       try {
         await sendPasswordResetEmail(auth, email);
-        alert("Password reset email sent!\nCheck your inbox/spam for the reset link.");
+        alert("Password reset email sent.\nCheck your inbox or spam for the reset link.");
         statusEl.textContent = "Reset email sent.";
       } catch (error) {
         alert(error.message);
@@ -173,16 +194,23 @@
     };
 
     window.resendVerification = async function () {
-      const email = getEmailInput();
+      const username = getUsernameInput();
       const password = getPasswordInput();
       statusEl.textContent = "";
 
-      if (!email || !password) {
-        alert("Enter your Company Account and Password first, then click Resend Verification.");
+      if (!username || !password) {
+        alert("Enter your username and password first, then click Resend Verification.");
         return;
       }
 
-      if (!enforcePluk(email)) return;
+      if (isAdminUsername(username)) {
+        alert("Admin account does not need email verification from this login form.");
+        return;
+      }
+
+      if (!validateLoginInput(username)) return;
+
+      const email = convertUsernameToEmail(username);
 
       try {
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -196,7 +224,7 @@
         }
 
         await sendEmailVerification(user);
-        alert("Verification email sent!\nPlease check your inbox/spam, then log in again.");
+        alert("Verification email sent.\nPlease check your inbox or spam, then log in again.");
         statusEl.textContent = "Verification sent.";
 
         await signOut(auth);
