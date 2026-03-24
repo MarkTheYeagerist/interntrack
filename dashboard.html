@@ -115,6 +115,7 @@
                   <th>DEPARTURE</th>
                   <th>WORK TYPE</th>
                   <th>TOTAL HOURS</th>
+                  <th>STATUS</th>
                 </tr>
               </thead>
               <tbody id="dtrBody"></tbody>
@@ -388,6 +389,29 @@
       const mm = String(dt.getMonth() + 1).padStart(2, "0");
       const dd = String(dt.getDate()).padStart(2, "0");
       return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function isWeekday(dateObj) {
+      const day = dateObj.getDay();
+      return day >= 1 && day <= 5;
+    }
+
+    function getWeekdayDatesInRange(startDate, endDateInclusive) {
+      const dates = [];
+      const cur = new Date(startDate);
+      cur.setHours(0, 0, 0, 0);
+
+      const end = new Date(endDateInclusive);
+      end.setHours(0, 0, 0, 0);
+
+      while (cur <= end) {
+        if (isWeekday(cur)) {
+          dates.push(new Date(cur));
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      return dates;
     }
 
     function creditedStartTime(dt) {
@@ -982,36 +1006,64 @@
         }
       });
 
-      const rows = Array.from(byDay.values()).sort((a, b) => a.dateObj - b.dateObj);
+      const rangeEnd = new Date(now);
+      rangeEnd.setHours(0, 0, 0, 0);
 
-      if (rows.length === 0) {
+      const weekdayDates = getWeekdayDatesInRange(start, rangeEnd);
+
+      if (weekdayDates.length === 0) {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td colspan="6" style="text-align:center;">No attendance records for this month yet.</td>`;
+        tr.innerHTML = `<td colspan="7" style="text-align:center;">No weekdays to show yet.</td>`;
         dtrBody.appendChild(tr);
         return;
       }
 
-      rows.forEach((r, index) => {
-        r.entries.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+      weekdayDates.forEach((dateObj, index) => {
+        const key = dayKeyFromDate(dateObj);
+        const record = byDay.get(key);
 
-        const rowKey = dayKeyFromDate(r.dateObj);
-        const workedMs = computeDayWorkedMs(r.entries, rowKey === todayKey);
-        const totalHours = `${creditedHoursFromMs(workedMs)} hrs`;
+        let arrival = "-";
+        let departure = "-";
+        let workType = "-";
+        let totalHours = "0 hrs";
+        let status = "Absent";
+        let rowClass = "dtr-row-absent";
 
-        const dateLabel = r.dateObj.toLocaleDateString("en-GB", {
+        if (record) {
+          record.entries.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+
+          const workedMs = computeDayWorkedMs(record.entries, key === todayKey);
+          totalHours = `${creditedHoursFromMs(workedMs)} hrs`;
+          arrival = record.arrival || "-";
+          departure = record.departure || "-";
+          workType = record.workType || "-";
+
+          if (arrival !== "-" && departure === "-") {
+            status = "Pending Time Out";
+            rowClass = "dtr-row-pending";
+          } else {
+            status = "Completed";
+            rowClass = "";
+          }
+        }
+
+        const dateLabel = dateObj.toLocaleDateString("en-GB", {
           day: "2-digit",
           month: "short",
           year: "2-digit"
         }).replace(/ /g, "-");
 
         const tr = document.createElement("tr");
+        if (rowClass) tr.classList.add(rowClass);
+
         tr.innerHTML = `
           <td>${index + 1}</td>
           <td>${dateLabel}</td>
-          <td>${r.arrival || "-"}</td>
-          <td>${r.departure || "-"}</td>
-          <td>${r.workType || "-"}</td>
+          <td>${arrival}</td>
+          <td>${departure}</td>
+          <td>${workType}</td>
           <td>${totalHours}</td>
+          <td>${status}</td>
         `;
         dtrBody.appendChild(tr);
       });
