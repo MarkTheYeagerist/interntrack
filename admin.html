@@ -114,6 +114,63 @@
         </div>
       </div>
 
+      <div class="card" id="selectedInternDtrCard">
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+          <div>
+            <h3 style="margin:0;">Selected Intern Whole DTR</h3>
+            <div class="muted" style="margin-top:6px;" id="selectedInternSubtitle">Choose an intern to see the whole DTR.</div>
+          </div>
+
+          <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+            <div>
+              <label class="muted"><b>Select Intern</b></label>
+              <select id="selectedIntern" style="min-width:260px;">
+                <option value="">Choose intern</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="muted"><b>DTR Filter</b></label>
+              <select id="selectedInternFilter" style="min-width:180px;">
+                <option value="all" selected>Whole DTR</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="month">This Month</option>
+                <option value="custom">Custom Date</option>
+              </select>
+            </div>
+
+            <div id="selectedInternCustomWrap" style="display:none;">
+              <label class="muted"><b>Pick date</b></label>
+              <input type="date" id="selectedInternCustomDate" />
+            </div>
+
+            <button id="btnLoadSelectedInternDtr" class="btn-secondary" style="width:auto;">Load DTR</button>
+          </div>
+        </div>
+
+        <div style="overflow:auto; margin-top:10px;">
+          <table class="dtr-table" style="min-width:950px;">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Arrival</th>
+                <th>Departure</th>
+                <th>Work Type</th>
+                <th>Total Hours</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="selectedInternDtrBody">
+              <tr>
+                <td colspan="7" style="text-align:center;">No intern selected.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <button class="btn-secondary" onclick="goDashboard()">Back to Dashboard</button>
       <button class="btn-secondary" onclick="logout()">Logout</button>
     </div>
@@ -193,7 +250,16 @@
     const customLogDate = document.getElementById("customLogDate");
     const logSubtitle = document.getElementById("logSubtitle");
 
+    const selectedIntern = document.getElementById("selectedIntern");
+    const selectedInternFilter = document.getElementById("selectedInternFilter");
+    const selectedInternCustomWrap = document.getElementById("selectedInternCustomWrap");
+    const selectedInternCustomDate = document.getElementById("selectedInternCustomDate");
+    const btnLoadSelectedInternDtr = document.getElementById("btnLoadSelectedInternDtr");
+    const selectedInternDtrBody = document.getElementById("selectedInternDtrBody");
+    const selectedInternSubtitle = document.getElementById("selectedInternSubtitle");
+
     let lastWeekDocRefs = [];
+    let cachedUsers = new Map();
 
     function openPhotoModal({ name, type, dt, img }) {
       photoTitle.textContent = `${name || "Unknown"} — ${type || "Attendance"}`;
@@ -238,6 +304,29 @@
 
     function startOfTomorrow() {
       return startOfNextDay(new Date());
+    }
+
+    function isWeekday(dateObj) {
+      const day = dateObj.getDay();
+      return day >= 1 && day <= 5;
+    }
+
+    function getWeekdayDatesInRange(startDate, endDateInclusive) {
+      const dates = [];
+      const cur = new Date(startDate);
+      cur.setHours(0, 0, 0, 0);
+
+      const end = new Date(endDateInclusive);
+      end.setHours(0, 0, 0, 0);
+
+      while (cur <= end) {
+        if (isWeekday(cur)) {
+          dates.push(new Date(cur));
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      return dates;
     }
 
     function mondayOfWeek(dateObj) {
@@ -407,10 +496,42 @@
       return totalCredited;
     }
 
+    async function loadUsersCache() {
+      const usersSnap = await getDocs(collection(db, "users"));
+      cachedUsers = new Map();
+      usersSnap.forEach(d => cachedUsers.set(d.id, d.data()));
+      return usersSnap;
+    }
+
+    async function populateSelectedInternDropdown() {
+      if (cachedUsers.size === 0) await loadUsersCache();
+
+      selectedIntern.innerHTML = `<option value="">Choose intern</option>`;
+
+      const rows = [];
+      for (const [uid, u] of cachedUsers.entries()) {
+        if ((u.role || "intern") === "admin") continue;
+        rows.push({
+          uid,
+          name: u.name ?? "",
+          department: u.department ?? ""
+        });
+      }
+
+      rows.sort((a, b) => a.name.localeCompare(b.name));
+
+      rows.forEach(r => {
+        const opt = document.createElement("option");
+        opt.value = r.uid;
+        opt.textContent = `${r.name} - ${r.department}`;
+        selectedIntern.appendChild(opt);
+      });
+    }
+
     async function loadInterns() {
       internBody.innerHTML = "";
 
-      const usersSnap = await getDocs(collection(db, "users"));
+      const usersSnap = await loadUsersCache();
       internCount.textContent = `Total Users: ${usersSnap.size}`;
 
       if (usersSnap.empty) {
@@ -420,13 +541,17 @@
 
       for (const docu of usersSnap.docs) {
         const u = docu.data();
-        const uid = docu.id;
+        if ((u.role || "intern") === "admin") continue;
 
+        const uid = docu.id;
         const required = Number(u.requiredHours ?? 0);
         const rendered = await computeRendered(uid);
         const remaining = Math.max(0, required - rendered);
 
         const tr = document.createElement("tr");
+        tr.classList.add("dtr-row-clickable");
+        tr.dataset.uid = uid;
+
         tr.innerHTML = `
           <td>${u.name ?? ""}</td>
           <td>${u.department ?? ""}</td>
@@ -434,8 +559,26 @@
           <td>${rendered} hrs</td>
           <td>${remaining} hrs</td>
         `;
+
+        tr.addEventListener("click", async () => {
+          Array.from(internBody.children).forEach(r => r.classList.remove("dtr-row-selected"));
+          tr.classList.add("dtr-row-selected");
+
+          selectedIntern.value = uid;
+          selectedInternFilter.value = "all";
+          syncSelectedInternCustomVisibility();
+          await loadSelectedInternWholeDtr();
+
+          const dtrCard = document.getElementById("selectedInternDtrCard");
+          if (dtrCard) {
+            dtrCard.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        });
+
         internBody.appendChild(tr);
       }
+
+      await populateSelectedInternDropdown();
     }
 
     function getMonthStart() {
@@ -451,11 +594,8 @@
     async function loadLogs() {
       logsBody.innerHTML = "";
 
-      const usersSnap = await getDocs(collection(db, "users"));
-      const userMap = new Map();
-      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+      if (cachedUsers.size === 0) await loadUsersCache();
 
-      const now = new Date();
       let logsQuery;
       let rangeStart = null;
       let rangeEnd = null;
@@ -534,7 +674,7 @@
         const dt = a.timestamp?.toDate();
         if (!dt) return;
 
-        const u = userMap.get(a.userId) || {};
+        const u = cachedUsers.get(a.userId) || {};
         const hasImg = !!a.imageBase64;
 
         const tr = document.createElement("tr");
@@ -574,9 +714,7 @@
     async function loadPendingToday() {
       pendingAdminList.innerHTML = "";
 
-      const usersSnap = await getDocs(collection(db, "users"));
-      const userMap = new Map();
-      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+      if (cachedUsers.size === 0) await loadUsersCache();
 
       const attSnap = await getDocs(query(
         collection(db, "attendance"),
@@ -606,7 +744,7 @@
       const pending = [];
       for (const [uid, s] of state.entries()) {
         if (!s.active) continue;
-        const u = userMap.get(uid) || {};
+        const u = cachedUsers.get(uid) || {};
         pending.push(`${u.name ?? uid} (${s.workType}) — In: ${s.lastInTime ? fmtTime(s.lastInTime) : "-"}`);
       }
 
@@ -623,7 +761,7 @@
         });
       }
 
-      pendingSubtitle.textContent = `Pending: ${pending.length} | Total users: ${usersSnap.size}`;
+      pendingSubtitle.textContent = `Pending: ${pending.length} | Total users: ${cachedUsers.size}`;
     }
 
     async function exportWeekZip() {
@@ -641,9 +779,7 @@
 
       exportStatus.textContent = `Exporting selected week: ${ymd(mon)} to ${ymd(fri)} (Mon-Fri)...`;
 
-      const usersSnap = await getDocs(collection(db, "users"));
-      const userMap = new Map();
-      usersSnap.forEach(d => userMap.set(d.id, d.data()));
+      if (cachedUsers.size === 0) await loadUsersCache();
 
       const attSnap = await getDocs(query(
         collection(db, "attendance"),
@@ -668,7 +804,7 @@
       attSnap.forEach(docu => {
         const a = docu.data();
         const dt = a.timestamp?.toDate?.() || null;
-        const u = userMap.get(a.userId) || {};
+        const u = cachedUsers.get(a.userId) || {};
 
         const row = {
           docId: docu.id,
@@ -790,6 +926,208 @@
       }
     }
 
+    function syncSelectedInternCustomVisibility() {
+      if (selectedInternFilter.value === "custom") {
+        selectedInternCustomWrap.style.display = "block";
+        if (!selectedInternCustomDate.value) {
+          const t = new Date();
+          selectedInternCustomDate.value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+        }
+      } else {
+        selectedInternCustomWrap.style.display = "none";
+      }
+    }
+
+    async function loadSelectedInternWholeDtr() {
+      const uid = selectedIntern.value;
+      selectedInternDtrBody.innerHTML = "";
+
+      if (!uid) {
+        selectedInternDtrBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Choose an intern first.</td></tr>`;
+        selectedInternSubtitle.textContent = "Choose an intern to see the whole DTR.";
+        return;
+      }
+
+      const user = cachedUsers.get(uid) || {};
+      let dtrQuery;
+      let rangeStart = null;
+      let rangeEndInclusive = null;
+
+      if (selectedInternFilter.value === "today") {
+        rangeStart = startOfToday();
+        rangeEndInclusive = startOfToday();
+
+        const end = startOfTomorrow();
+        dtrQuery = query(
+          collection(db, "attendance"),
+          where("userId", "==", uid),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", end),
+          orderBy("timestamp", "asc")
+        );
+        selectedInternSubtitle.textContent = `Showing today DTR of ${user.name ?? "selected intern"}.`;
+      } else if (selectedInternFilter.value === "yesterday") {
+        const y = new Date();
+        y.setDate(y.getDate() - 1);
+        rangeStart = startOfDay(y);
+        rangeEndInclusive = startOfDay(y);
+
+        const end = startOfNextDay(y);
+        dtrQuery = query(
+          collection(db, "attendance"),
+          where("userId", "==", uid),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", end),
+          orderBy("timestamp", "asc")
+        );
+        selectedInternSubtitle.textContent = `Showing yesterday DTR of ${user.name ?? "selected intern"}.`;
+      } else if (selectedInternFilter.value === "month") {
+        const monthStart = getMonthStart();
+        rangeStart = monthStart;
+        rangeEndInclusive = startOfDay(new Date());
+
+        const nextMonthStart = getNextMonthStart();
+        dtrQuery = query(
+          collection(db, "attendance"),
+          where("userId", "==", uid),
+          where("timestamp", ">=", monthStart),
+          where("timestamp", "<", nextMonthStart),
+          orderBy("timestamp", "asc")
+        );
+        selectedInternSubtitle.textContent = `Showing this month DTR of ${user.name ?? "selected intern"}.`;
+      } else if (selectedInternFilter.value === "custom") {
+        if (!selectedInternCustomDate.value) {
+          selectedInternDtrBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Pick a date first.</td></tr>`;
+          selectedInternSubtitle.textContent = "Please choose a custom date.";
+          return;
+        }
+
+        const picked = new Date(selectedInternCustomDate.value + "T00:00:00");
+        rangeStart = startOfDay(picked);
+        rangeEndInclusive = startOfDay(picked);
+
+        const end = startOfNextDay(picked);
+        dtrQuery = query(
+          collection(db, "attendance"),
+          where("userId", "==", uid),
+          where("timestamp", ">=", rangeStart),
+          where("timestamp", "<", end),
+          orderBy("timestamp", "asc")
+        );
+        selectedInternSubtitle.textContent = `Showing DTR of ${user.name ?? "selected intern"} for ${ymd(rangeStart)}.`;
+      } else {
+        dtrQuery = query(
+          collection(db, "attendance"),
+          where("userId", "==", uid),
+          orderBy("timestamp", "asc")
+        );
+        selectedInternSubtitle.textContent = `Showing whole DTR of ${user.name ?? "selected intern"}.`;
+      }
+
+      const snap = await getDocs(dtrQuery);
+
+      if (selectedInternFilter.value === "all") {
+        if (snap.empty) {
+          selectedInternDtrBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No DTR found for this intern yet.</td></tr>`;
+          return;
+        }
+
+        const firstDoc = snap.docs[0].data();
+        rangeStart = startOfDay(firstDoc.timestamp.toDate());
+        rangeEndInclusive = startOfDay(new Date());
+      }
+
+      if (!rangeStart || !rangeEndInclusive) {
+        selectedInternDtrBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Unable to build DTR range.</td></tr>`;
+        return;
+      }
+
+      const byDay = new Map();
+      const todayKey = dayKeyFromDate(new Date());
+
+      snap.forEach(docu => {
+        const a = docu.data();
+        if (!a.timestamp) return;
+
+        const dt = a.timestamp.toDate();
+        const key = dayKeyFromDate(dt);
+
+        if (!byDay.has(key)) {
+          byDay.set(key, {
+            dateObj: new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()),
+            arrival: "",
+            departure: "",
+            workType: "",
+            entries: []
+          });
+        }
+
+        const entry = byDay.get(key);
+        entry.entries.push(a);
+
+        if (a.type === "Time In") {
+          if (!entry.arrival) entry.arrival = fmtTime(dt);
+          if (!entry.workType && a.workType) entry.workType = a.workType;
+        }
+
+        if (a.type === "Time Out") {
+          entry.departure = fmtTime(dt);
+          if (!entry.workType && a.workType) entry.workType = a.workType;
+        }
+      });
+
+      const weekdayDates = getWeekdayDatesInRange(rangeStart, rangeEndInclusive);
+
+      if (weekdayDates.length === 0) {
+        selectedInternDtrBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No weekday rows found.</td></tr>`;
+        return;
+      }
+
+      weekdayDates.forEach((dateObj, index) => {
+        const key = dayKeyFromDate(dateObj);
+        const record = byDay.get(key);
+
+        let arrival = "-";
+        let departure = "-";
+        let workType = "-";
+        let totalHours = "0 hrs";
+        let status = "Absent";
+        let rowClass = "dtr-row-absent";
+
+        if (record) {
+          record.entries.sort((x, y) => x.timestamp.toDate() - y.timestamp.toDate());
+
+          const workedMs = computeDayWorkedMs(record.entries, key === todayKey);
+          totalHours = `${creditedHoursFromMs(workedMs)} hrs`;
+          arrival = record.arrival || "-";
+          departure = record.departure || "-";
+          workType = record.workType || "-";
+
+          if (arrival !== "-" && departure === "-") {
+            status = "Pending Time Out";
+            rowClass = "dtr-row-pending";
+          } else {
+            status = "Completed";
+            rowClass = "";
+          }
+        }
+
+        const tr = document.createElement("tr");
+        if (rowClass) tr.classList.add(rowClass);
+
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${fmtDate(dateObj)}</td>
+          <td>${arrival}</td>
+          <td>${departure}</td>
+          <td>${workType}</td>
+          <td>${totalHours}</td>
+          <td>${status}</td>
+        `;
+        selectedInternDtrBody.appendChild(tr);
+      });
+    }
+
     searchIntern.addEventListener("input", () => {
       const filter = searchIntern.value.toLowerCase();
       Array.from(internBody.children).forEach(row => {
@@ -818,6 +1156,15 @@
     btnExportZip.addEventListener("click", exportWeekZip);
     btnRemoveImages.addEventListener("click", removeWeekImages);
 
+    selectedInternFilter.addEventListener("change", () => {
+      syncSelectedInternCustomVisibility();
+      loadSelectedInternWholeDtr();
+    });
+
+    selectedInternCustomDate.addEventListener("change", loadSelectedInternWholeDtr);
+    selectedIntern.addEventListener("change", loadSelectedInternWholeDtr);
+    btnLoadSelectedInternDtr.addEventListener("click", loadSelectedInternWholeDtr);
+
     window.goDashboard = () => window.location.href = "dashboard.html";
 
     window.logout = async function () {
@@ -839,8 +1186,6 @@
       }
 
       adminStatus.textContent = "Admin access granted.";
-      await loadPendingToday();
-      await loadInterns();
 
       const today = new Date();
       const yyyy = today.getFullYear();
@@ -849,9 +1194,14 @@
 
       weekDate.value = `${yyyy}-${mm}-${dd}`;
       customLogDate.value = `${yyyy}-${mm}-${dd}`;
+      selectedInternCustomDate.value = `${yyyy}-${mm}-${dd}`;
 
       updateWeekRangeLabel();
       syncCustomDateVisibility();
+      syncSelectedInternCustomVisibility();
+
+      await loadInterns();
+      await loadPendingToday();
 
       logFilter.value = "today";
       await loadLogs();
